@@ -1,0 +1,22 @@
+# Environment (secrets)
+.env
+!.env.example
+
+# Docker volumes
+data/
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+
+# .NET
+bin/
+obj/
+*.dll
+*.pdb
+
+# OS
+.DS_Store
+Thumbs.db
