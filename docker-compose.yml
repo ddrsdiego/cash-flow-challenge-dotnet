@@ -146,7 +146,7 @@ services:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/${KEYCLOAK_DB}
+      KC_DB_URL: "jdbc:postgresql://keycloak-db:5432/${KEYCLOAK_DB}"
       KC_DB_USERNAME: ${KEYCLOAK_DB_USER}
       KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
       KC_HEALTH_ENABLED: "true"
@@ -212,6 +212,7 @@ services:
     image: jaegertracing/all-in-one:1.56
     container_name: cashflow-jaeger
     restart: unless-stopped
+    user: "root"   # Necessário para escrita no volume Badger (dev only)
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
       SPAN_STORAGE_TYPE: badger
@@ -307,10 +308,10 @@ services:
     networks:
       - monitoring-net
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5341/health"]
+      test: ["CMD-SHELL", "test -e /proc/1/status"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 3
       start_period: 15s
     deploy:
       resources:
@@ -331,19 +332,19 @@ services:
     profiles: ["app"]
     environment:
       ASPNETCORE_ENVIRONMENT: Development
-      ASPNETCORE_URLS: http://+:8080
+      ASPNETCORE_URLS: "http://+:8080"
       # --- Auth ---
-      Authentication__Authority: http://keycloak:8080/realms/cashflow
+      Authentication__Authority: "http://keycloak:8080/realms/cashflow"
       Authentication__Audience: cashflow-api
       # --- Rate Limiting ---
       RateLimiting__PermitLimit: 100
       RateLimiting__WindowSeconds: 60
       # --- Observability ---
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
       OTEL_SERVICE_NAME: cashflow-gateway
       # --- Downstream Services ---
-      ReverseProxy__Clusters__transactions__Destinations__default__Address: http://cashflow-transactions-api:8080
-      ReverseProxy__Clusters__consolidation__Destinations__default__Address: http://cashflow-consolidation-api:8080
+      ReverseProxy__Clusters__transactions__Destinations__default__Address: "http://cashflow-transactions-api:8080"
+      ReverseProxy__Clusters__consolidation__Destinations__default__Address: "http://cashflow-consolidation-api:8080"
     ports:
       - "${GATEWAY_PORT:-8080}:8080"
     networks:
@@ -370,9 +371,9 @@ services:
     profiles: ["app"]
     environment:
       ASPNETCORE_ENVIRONMENT: Development
-      ASPNETCORE_URLS: http://+:8080
+      ASPNETCORE_URLS: "http://+:8080"
       # --- Database ---
-      MongoDB__ConnectionString: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/transactions_db?authSource=admin
+      MongoDB__ConnectionString: "mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/transactions_db?authSource=admin"
       MongoDB__DatabaseName: transactions_db
       # --- Messaging ---
       RabbitMQ__HostName: rabbitmq
@@ -380,10 +381,10 @@ services:
       RabbitMQ__UserName: ${RABBITMQ_DEFAULT_USER}
       RabbitMQ__Password: ${RABBITMQ_DEFAULT_PASS}
       # --- Auth ---
-      Authentication__Authority: http://keycloak:8080/realms/cashflow
+      Authentication__Authority: "http://keycloak:8080/realms/cashflow"
       Authentication__Audience: cashflow-api
       # --- Observability ---
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
       OTEL_SERVICE_NAME: cashflow-transactions-api
     ports:
       - "${TRANSACTIONS_API_PORT:-8081}:8080"
@@ -410,19 +411,19 @@ services:
     profiles: ["app"]
     environment:
       ASPNETCORE_ENVIRONMENT: Development
-      ASPNETCORE_URLS: http://+:8080
+      ASPNETCORE_URLS: "http://+:8080"
       # --- Database ---
-      MongoDB__ConnectionString: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/consolidation_db?authSource=admin
+      MongoDB__ConnectionString: "mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/consolidation_db?authSource=admin"
       MongoDB__DatabaseName: consolidation_db
       # --- Cache ---
-      Redis__ConnectionString: redis:6379,password=${REDIS_PASSWORD},abortConnect=false
-      Redis__InstanceName: cashflow:consolidation:
+      Redis__ConnectionString: "redis:6379,password=${REDIS_PASSWORD},abortConnect=false"
+      Redis__InstanceName: "cashflow:consolidation:"
       Redis__DefaultExpirationMinutes: 5
       # --- Auth ---
-      Authentication__Authority: http://keycloak:8080/realms/cashflow
+      Authentication__Authority: "http://keycloak:8080/realms/cashflow"
       Authentication__Audience: cashflow-api
       # --- Observability ---
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
       OTEL_SERVICE_NAME: cashflow-consolidation-api
     ports:
       - "${CONSOLIDATION_API_PORT:-8082}:8080"
@@ -450,18 +451,18 @@ services:
     environment:
       DOTNET_ENVIRONMENT: Development
       # --- Database ---
-      MongoDB__ConnectionString: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/consolidation_db?authSource=admin
+      MongoDB__ConnectionString: "mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/consolidation_db?authSource=admin"
       MongoDB__DatabaseName: consolidation_db
       # --- Cache (invalidation) ---
-      Redis__ConnectionString: redis:6379,password=${REDIS_PASSWORD},abortConnect=false
-      Redis__InstanceName: cashflow:consolidation:
+      Redis__ConnectionString: "redis:6379,password=${REDIS_PASSWORD},abortConnect=false"
+      Redis__InstanceName: "cashflow:consolidation:"
       # --- Messaging ---
       RabbitMQ__HostName: rabbitmq
       RabbitMQ__Port: 5672
       RabbitMQ__UserName: ${RABBITMQ_DEFAULT_USER}
       RabbitMQ__Password: ${RABBITMQ_DEFAULT_PASS}
       # --- Observability ---
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
       OTEL_SERVICE_NAME: cashflow-consolidation-worker
     networks:
       - backend-net
