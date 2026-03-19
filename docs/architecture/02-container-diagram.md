@@ -212,6 +212,7 @@ C4Container
   - `transactions_db` — Dados de lançamentos
     - Collection: `transactions`
       - `_id` (ObjectId)
+      - `userId` (String — extraído do JWT, identifica o autor do lançamento)
       - `type` (DEBIT|CREDIT)
       - `amount` (Decimal128)
       - `description` (String)
@@ -220,6 +221,7 @@ C4Container
       - `createdAt` (Timestamp)
       - `updatedAt` (Timestamp)
       - Índice: `date` + `type`
+      - Índice: `userId` (para consultas de auditoria por usuário)
     - Collection: `outbox` (Outbox Pattern)
       - Armazena eventos aguardando publicação
   - `consolidation_db` — Dados de consolidação

@@ -50,7 +50,7 @@ cashflow-system/
 │   ├── decisions/
 │   │   ├── ADR-001-async-communication.md
 │   │   ├── ADR-002-database-per-service.md
-│   │   ├── ADR-003-cqrs-consolidation.md
+│   │   ├── ADR-003-user-context-propagation.md
 │   │   ├── ADR-004-api-gateway.md
 │   │   ├── ADR-005-authentication-strategy.md
 │   │   └── ADR-006-observability-stack.md
@@ -115,7 +115,7 @@ cashflow-system/
 | 1.3 | C4 Context Diagram | Visão geral: comerciante, sistema, integrações externas | 1 sessão |
 | 1.4 | C4 Container Diagram | APIs, broker, databases, gateway, identity provider | 1 sessão |
 | 1.5 | C4 Component Diagrams | Componentes internos de cada serviço | 1 sessão |
-| 1.6 | ADRs (Architecture Decision Records) | 6 ADRs fundamentando cada decisão relevante | 1 sessão |
+| 1.6 | ADRs (Architecture Decision Records) | ADRs fundamentando cada decisão relevante | 1 sessão |
 | 1.7 | Fluxos de Interação | Sequência de lançamento e consulta de consolidado | 1 sessão |
 
 ### FASE 2 — Documentação de Segurança (Obrigatória)

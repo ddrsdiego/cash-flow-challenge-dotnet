@@ -32,17 +32,19 @@ O **CashFlow System** é um sistema de controle de fluxo de caixa que permite a 
 - Comerciante possui permissão de escrita (role: `transactions:write`)
 
 **Fluxo Principal:**
-1. Comerciante acessa a API de Transações: `POST /api/transactions`
+1. Comerciante acessa a API de Transações: `POST /api/transactions` (com JWT no header Authorization)
 2. Fornece os dados:
    - `type`: "DEBIT" (despesa)
    - `amount`: valor em decimal positivo (ex: 150.50)
    - `description`: descrição da despesa (ex: "Compra de insumos")
    - `date`: data da transação (YYYY-MM-DD)
    - `category`: categoria (ex: "Supplies", "Services", "Utilities")
+   - ⚠️ **`userId` NÃO é enviado pelo cliente** — é extraído automaticamente do claim `sub` do JWT
 3. Sistema valida os dados
-4. Sistema persiste o lançamento no Transactions DB (MongoDB)
-5. Sistema publica evento `TransactionCreated` no RabbitMQ
-6. Sistema retorna o lançamento criado com `201 Created`
+4. Sistema extrai `userId` do JWT e associa ao lançamento
+5. Sistema persiste o lançamento no Transactions DB (MongoDB), incluindo o `userId`
+6. Sistema publica evento `TransactionCreated` no RabbitMQ (incluindo `userId` para rastreabilidade)
+7. Sistema retorna o lançamento criado com `201 Created`
 
 **Fluxos Alternativos:**
 
@@ -78,17 +80,19 @@ O **CashFlow System** é um sistema de controle de fluxo de caixa que permite a 
 - Comerciante possui permissão de escrita (role: `transactions:write`)
 
 **Fluxo Principal:**
-1. Comerciante acessa a API de Transações: `POST /api/transactions`
+1. Comerciante acessa a API de Transações: `POST /api/transactions` (com JWT no header Authorization)
 2. Fornece os dados:
    - `type`: "CREDIT" (receita)
    - `amount`: valor em decimal positivo (ex: 500.00)
    - `description`: descrição da receita (ex: "Vendas do dia")
    - `date`: data da transação (YYYY-MM-DD)
    - `category`: categoria (ex: "Sales", "Services", "Returns")
+   - ⚠️ **`userId` NÃO é enviado pelo cliente** — é extraído automaticamente do claim `sub` do JWT
 3. Sistema valida os dados
-4. Sistema persiste o lançamento no Transactions DB
-5. Sistema publica evento `TransactionCreated` no RabbitMQ
-6. Sistema retorna o lançamento criado com `201 Created`
+4. Sistema extrai `userId` do JWT e associa ao lançamento
+5. Sistema persiste o lançamento no Transactions DB (MongoDB), incluindo o `userId`
+6. Sistema publica evento `TransactionCreated` no RabbitMQ (incluindo `userId` para rastreabilidade)
+7. Sistema retorna o lançamento criado com `201 Created`
 
 **Fluxos Alternativos:** Idênticos a UC-01
 
@@ -173,6 +177,7 @@ O **CashFlow System** é um sistema de controle de fluxo de caixa que permite a 
      "data": [
        {
          "id": "507f1f77bcf86cd799439011",
+         "userId": "user-123",
          "type": "CREDIT",
          "amount": 500.00,
          "description": "Venda do dia",
@@ -237,6 +242,15 @@ O **CashFlow System** é um sistema de controle de fluxo de caixa que permite a 
 - **Regra:** Se Consolidation Service falhar, Transactions Service continua operacional
 - **Implementação:** Comunicação assíncrona (não síncrona)
 - **Implicação:** Consolidado pode estar temporariamente desatualizado enquanto Transactions está 100% funcional
+
+### RN-08: Identidade do Usuário por Extração, não por Input
+- **Regra:** O `userId` associado a cada lançamento é extraído do JWT — jamais aceito como campo no body da requisição
+- **Justificativa:** Impede que um usuário crie lançamentos em nome de outro
+- **Implementação:** API Gateway propaga `userId` via header `X-User-Id` extraído do claim `sub` do JWT; Transactions API lê esse header ao criar o lançamento
+- **Imutabilidade:** `userId` não pode ser alterado após a criação do lançamento
+- **Auditoria:** `userId` é persistido em cada `Transaction` e propagado no evento `TransactionCreated` para rastreabilidade futura
+- **Escopo no MVP:** `userId` identifica o autor do lançamento para auditoria; **não isola dados** entre usuários (single-tenant MVP)
+- **Ver:** [ADR-003](../decisions/ADR-003-user-context-propagation.md)
 
 ---
 
@@ -342,7 +356,7 @@ O **CashFlow System** é um sistema de controle de fluxo de caixa que permite a 
 ## Critérios de Aceite
 
 - [ ] Todos os casos de uso (UC-01 a UC-04) podem ser testados manualmente
-- [ ] Regras de negócio (RN-01 a RN-07) são validadas em testes
+- [ ] Regras de negócio (RN-01 a RN-08) são validadas em testes
 - [ ] Endpoints seguem convenções REST
 - [ ] Isolamento entre Transactions e Consolidation é garantido por design
 - [ ] Documentação é testável (contém exemplos concretos de request/response)

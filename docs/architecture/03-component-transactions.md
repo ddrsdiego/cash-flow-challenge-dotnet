@@ -130,6 +130,7 @@ quando a notificação também está garantida.
 // Estrutura conceitual:
 class Transaction {
     ObjectId Id
+    string UserId               // Extraído do JWT — quem criou o lançamento (imutável)
     TransactionType Type        // DEBIT | CREDIT
     decimal Amount              // Sempre positivo
     string Description          // Obrigatório, ≤ 500 chars
@@ -140,6 +141,10 @@ class Transaction {
     string Status               // PENDING | CONFIRMED
 }
 ```
+
+> **Nota de Segurança:** `UserId` nunca é aceito como input do cliente. É
+> extraído do JWT pelo middleware de autenticação e injetado no comando antes
+> de chegar ao aggregate. Ver [ADR-003](../../decisions/ADR-003-user-context-propagation.md).
 
 **Regras encapsuladas:**
 - Amount sempre positivo (débito/crédito é pelo `Type`)

@@ -28,6 +28,7 @@ Registrar e gerenciar transações financeiras individuais (débitos e créditos
 ```
 Transaction (Entidade Agregadora)
 ├── id: UUID
+├── userId: String (extraído do JWT — quem criou o lançamento)
 ├── type: "DEBIT" | "CREDIT"
 ├── amount: Decimal (sempre positivo)
 ├── description: String
@@ -46,12 +47,16 @@ Category Enum
 └── Other
 ```
 
+> **Nota:** `userId` nunca é informado pelo cliente. É extraído automaticamente
+> do JWT pelo middleware de autenticação. Ver [ADR-003](../decisions/ADR-003-user-context-propagation.md).
+
 #### Regras de Negócio
 - Transaction.amount > 0 (sempre)
 - Transaction.description é obrigatório e não vazio
 - Transaction.date não pode ser > hoje
 - Transações com data > 24h passadas são imutáveis (somente leitura)
 - Cada lançamento é independente (não afeta outros)
+- Transaction.userId é imutável após criação (não pode ser alterado)
 
 #### Events Publicados
 - `TransactionCreated` — Novo lançamento registrado
@@ -63,6 +68,7 @@ Category Enum
     "aggregateType": "Transaction",
     "data": {
       "transactionId": "507f1f77bcf86cd799439011",
+      "userId": "user-123",
       "type": "CREDIT",
       "amount": 500.00,
       "description": "Venda do dia",
@@ -113,6 +119,10 @@ ConsolidationSummary (Value Object - para cache)
 └── cachedAt: Timestamp
 ```
 
+> **Nota:** `DailyConsolidation` **não possui** `userId`. O saldo diário é global
+> (single-tenant MVP) — consolida todos os lançamentos do comerciante,
+> independentemente de qual usuário os criou. Ver [ADR-003](../decisions/ADR-003-user-context-propagation.md).
+
 #### Regras de Negócio
 - Um dia só pode ter UM documento de consolidação
 - DailyConsolidation.balance = SUM(credits) - SUM(debits)
@@ -132,6 +142,7 @@ ConsolidationSummary (Value Object - para cache)
   {
     "eventId": "uuid",
     "eventType": "DailyConsolidationCalculated",
+    "version": "1.0",
     "aggregateId": "consolidation-{date}",
     "aggregateType": "DailyConsolidation",
     "data": {
@@ -175,6 +186,7 @@ Não mantemos histórico de todos os eventos, mas os eventos são o meio de comu
   "idempotencyKey": "{{uuid}}",
   "data": {
     "transactionId": "507f1f77bcf86cd799439011",
+    "userId": "{{userId-from-jwt}}",
     "type": "CREDIT",
     "amount": 500.00,
     "description": "Venda do dia",
@@ -184,16 +196,20 @@ Não mantemos histórico de todos os eventos, mas os eventos são o meio de comu
 }
 ```
 
+> **Como o userId é obtido:** O `userId` é extraído do claim `sub` do JWT pelo
+> middleware de autenticação no API Gateway. Os serviços downstream recebem o
+> userId como header HTTP propagado (`X-User-Id`). Ver [ADR-003](../decisions/ADR-003-user-context-propagation.md).
+
 **Fluxo:**
 ```
-1. Transactions API insere em transactions_db
+1. Transactions API insere em transactions_db (incluindo userId)
 2. Transactions API insere em outbox (mesmo documento ou collection separada)
 3. Transação MongoDB: COMMIT
 4. Outbox Publisher lê evento do outbox
 5. Publica em RabbitMQ (exchange: `events`, routing key: `transaction.created`)
 6. Remove do outbox
 7. Consolidation Worker consome da fila
-8. Recalcula saldo para o dia
+8. Recalcula saldo para o dia (userId não é usado no cálculo de saldo)
 9. Atualiza consolidation_db
 10. Invalida cache (Redis)
 ```
@@ -239,7 +255,8 @@ Não mantemos histórico de todos os eventos, mas os eventos são o meio de comu
 | **Saldo Diário** | Saldo consolidado de um dia específico | Saldo em 15/03 | Consolidation |
 | **Fluxo de Caixa** | Movimento de dinheiro (entradas e saídas) | Histórico mensal | Geral |
 | **Comerciante** | Pessoa ou empresa que usa o sistema | João Silva (vendedor) | Geral |
-| **Períod**o | Intervalo de tempo (dia, mês, trimestre) | 01/03 a 31/03 | Geral |
+| **Período** | Intervalo de tempo (dia, mês, trimestre) | 01/03 a 31/03 | Geral |
+| **UserId** | Identificador do usuário autenticado (extraído do JWT) | "user-123" | Geral |
 
 ---
 
@@ -260,11 +277,13 @@ Não mantemos histórico de todos os eventos, mas os eventos são o meio de comu
 │  │ • Validar dados      │        │ • Recalcular saldo   │  │
 │  │ • Persistir trans    │        │ • Cache saldo        │  │
 │  │ • Publicar evento    │        │ • Consultar saldo    │  │
-│  │                      │        │                      │  │
+│  │ • userId (auditoria) │        │ • Saldo global       │  │
+│  │                      │        │   (sem userId)       │  │
 │  └──────────┬───────────┘        └──────────┬───────────┘  │
 │             │                               │               │
 │             │ TransactionCreated            │               │
 │             │ (evento via RabbitMQ)         │               │
+│             │ inclui userId para auditoria  │               │
 │             │──────────────────────────────▶│               │
 │             │                               │               │
 │             │                DailyConsolidation             │
@@ -320,6 +339,7 @@ Não mantemos histórico de todos os eventos, mas os eventos são o meio de comu
 │  Capacidade 3: Auditoria               │
 │  ├─ Imutabilidade (transações > 24h)  │
 │  ├─ Logging de todas criações/leituras │
+│  ├─ userId registrado em cada trans.   │
 │  └─ Rastreamento via traceId           │
 │                                         │
 └─────────────────────────────────────────┘
@@ -360,18 +380,19 @@ SEQUÊNCIA CRONOLÓGICA:
 
 1. Comerciante
    ▼
-   POST /api/transactions
+   POST /api/transactions (com JWT)
    ├─ type: CREDIT
    ├─ amount: 500.00
    └─ date: 2024-03-15
+   (userId extraído do JWT — não enviado pelo cliente)
 
 2. Transactions API
    ▼
    ├─ Valida input
-   ├─ Valida autenticação
+   ├─ Extrai userId do claim JWT (X-User-Id header do Gateway)
    ├─ BEGIN TRANSACTION
-   ├─ INSERT transactions_db
-   ├─ INSERT outbox (event)
+   ├─ INSERT transactions_db (incluindo userId)
+   ├─ INSERT outbox (event com userId)
    ├─ COMMIT
    └─ RETURN 201 Created
 
@@ -390,11 +411,12 @@ SEQUÊNCIA CRONOLÓGICA:
    ▼
    ├─ Consome mensagem
    ├─ Idempotency check (já processado?)
-   ├─ Busca transações para 2024-03-15
-   ├─ Calcula:
-   │  ├─ totalCredits = SUM(type=CREDIT)
-   │  ├─ totalDebits = SUM(type=DEBIT)
-   │  └─ balance = totalCredits - totalDebits
+   ├─ Lê DailyConsolidation atual de consolidation_db (ou cria novo)
+   ├─ Aplica delta do evento:
+   │  ├─ se CREDIT → totalCredits += amount
+   │  └─ se DEBIT  → totalDebits  += amount
+   ├─ Recalcula: balance = totalCredits - totalDebits
+   │  (userId do evento NÃO é usado no cálculo — saldo é global)
    ├─ UPSERT consolidation_db
    ├─ DELETE consolidation-redis:{date} (cache)
    ├─ Marca como processado
@@ -420,7 +442,7 @@ T0+200ms       = Cache atualizado
 
 ```
 1. Transactions API
-   └─ Cria transação normalmente
+   └─ Cria transação normalmente (com userId)
       └─ Publica evento em RabbitMQ
 
 2. RabbitMQ
@@ -474,6 +496,11 @@ T0+200ms       = Cache atualizado
 - Consolidation degrada graciosamente (mostra dados velhos)
 - Nenhum contexto é SPOF (single point of failure)
 
+### 6. Identidade do Usuário por Extração, não por Input
+- `userId` é extraído do JWT — nunca informado pelo cliente
+- Garante que um usuário não pode criar transações em nome de outro
+- Ver [ADR-003](../decisions/ADR-003-user-context-propagation.md) para detalhes
+
 ---
 
 ## Mapeamento Futuro
@@ -505,6 +532,14 @@ T0+200ms       = Cache atualizado
 │  │ (consome DailyConsolidationCalculated)│
 │  └─► publica ReconciliationCompleted     │
 └──────────────────────────────────────────┘
+
+┌──────────────────────────────────────────┐
+│  Future: MULTI-TENANT Context            │
+│  • Isolamento por merchantId             │
+│  • Consolidado por merchant              │
+│  │ (userId evolui para merchantId+userId)│
+│  └─► Novos ADRs de isolamento            │
+└──────────────────────────────────────────┘
 ```
 
 ---
@@ -513,13 +548,14 @@ T0+200ms       = Cache atualizado
 
 O **CashFlow System** é arquitetado com dois bounded contexts altamente desacoplados:
 
-1. **Transactions Context** — Responsável por ingestão e armazenamento de transações
-2. **Consolidation Context** — Responsável por agregação e consulta de saldos
+1. **Transactions Context** — Responsável por ingestão e armazenamento de transações (com `userId` para auditoria)
+2. **Consolidation Context** — Responsável por agregação e consulta de saldos (global, sem segmentação por `userId`)
 
 A comunicação via **Published Language** e **Event-Driven Architecture** garante que:
 - ✅ Resiliência total (um falha não afeta o outro)
 - ✅ Escalabilidade independente (cada contexto escala conforme sua carga)
 - ✅ Manutenibilidade (lógica separada, fácil de entender)
 - ✅ Extensibilidade (novos contextos podem se inscrever em eventos existentes)
+- ✅ Rastreabilidade de auditoria (`userId` em cada transação)
 
 Este design permite que o sistema cresça de um MVP simples para uma plataforma financeira robusta.

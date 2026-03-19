@@ -329,23 +329,32 @@ Serviços compartilhando banco de dados criam acoplamento de dados:
 - Falha de conexão em um afeta todos
 
 ### Solução
-Cada serviço possui seu próprio banco:
+Cada serviço possui seu próprio banco, com isolamento total:
 
 ```
 Transactions API    ──→  transactions_db (MongoDB)
 Consolidation API   ──→  consolidation_db (MongoDB)
-Consolidation Worker──→  consolidation_db (MongoDB) + transactions_db (read-only)
+Consolidation Worker──→  consolidation_db (MongoDB)
 Keycloak            ──→  keycloak_db (PostgreSQL)
 ```
 
-### Nota: Cross-Database Read no Worker
-O Worker lê de `transactions_db` para calcular o saldo. Isso é um **trade-off consciente**:
+### Isolamento Total do Worker
+O Consolidation Worker **não acessa** `transactions_db`. O evento `TransactionCreated` carrega todos os dados necessários para atualização incremental do consolidado:
 
-- ✅ Evita chamada HTTP síncrona ao Transactions Service (que criaria acoplamento)
-- ✅ Ambos databases estão no mesmo MongoDB instance (sem overhead de rede)
-- ⚠️ O Worker tem dependência implícita do schema do Transactions
+```
+Evento recebido: { type: "CREDIT", amount: 500.00, date: "2024-03-15" }
 
-**Alternativa para escala maior:** O Transactions Service incluir no evento `TransactionCreated` todos os dados necessários para o cálculo (type + amount). Assim o Worker não precisaria consultar o banco de Transactions. Para o MVP, a leitura direta é mais simples.
+Worker aplica delta em consolidation_db:
+  se CREDIT → totalCredits += amount
+  se DEBIT  → totalDebits  += amount
+  balance    = totalCredits - totalDebits
+```
+
+Essa abordagem garante:
+- ✅ Isolamento completo: Worker nunca lê `transactions_db`
+- ✅ Sem acoplamento de schema: mudanças no Transactions não afetam o Worker
+- ✅ Consistência garantida pelo Outbox Pattern (event carrega dados suficientes)
+- ✅ Operação idempotente: mesmo evento processado 2x não duplica saldo (idempotencyKey)
 
 ### Trade-offs
 
@@ -353,7 +362,8 @@ O Worker lê de `transactions_db` para calcular o saldo. Isso é um **trade-off 
 |------|---------|
 | Isolamento total — falha em um não afeta outro | Sem JOIN entre databases |
 | Evolução independente de schema | Consistência eventual entre databases |
-| Escala independente | Worker precisa de leitura cross-database |
+| Escala independente | Evento deve carregar todos os dados necessários ao processamento |
+| Worker isolado em consolidation_db (sem cross-DB read) | Mudança no contrato do evento requer versionamento |
 
 ---
 

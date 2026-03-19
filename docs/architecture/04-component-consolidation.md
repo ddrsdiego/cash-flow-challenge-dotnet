@@ -62,11 +62,7 @@ C4Component
 
         Component(idempotency, "IdempotencyChecker", "Application Service", "Evita processamento duplicado:\n• Busca idempotencyKey no MongoDB\n• Se já processado: ignora silenciosamente\n• Se novo: prossegue + registra")
 
-        Component(calculator, "ConsolidationCalculator", "Domain Service", "Calcula saldo consolidado:\nbalance = sum(CREDIT) - sum(DEBIT)\nAgrupa por data\nConta transações\nRetorna DailyConsolidation")
-
-        Component(txreader, "ITransactionReader", "Interface", "Abstração de leitura cross-service:\n• GetByDateAsync(date)\nLê de transactions_db (read-only)")
-
-        Component(mongotxreader, "MongoTransactionReader", "Infrastructure", "Lê transações para cálculo:\n• Conexão em transactions_db\n• Filtro: date = evento.date\n• Projeção: type + amount only\n• Read-only (nunca escreve)")
+        Component(calculator, "ConsolidationCalculator", "Domain Service", "Aplica delta incremental ao consolidado:\n• Recebe: type + amount do evento\n• se CREDIT → totalCredits += amount\n• se DEBIT  → totalDebits  += amount\n• Recalcula: balance = totalCredits - totalDebits\n• Retorna DailyConsolidation atualizado")
 
         Component(irepo, "IConsolidationRepository", "Interface", "Abstração de persistência:\n• UpsertAsync(consolidation, session)\n• GetByDateAsync(date)")
 
@@ -83,28 +79,23 @@ C4Component
 
     ContainerDb(rabbitmq, "RabbitMQ", "Message Broker", "Queue: consolidation.input\nDLQ: dlx.transaction.created")
 
-    ContainerDb(txmongo, "MongoDB", "transactions_db", "Collection: transactions (read-only)")
-
     ContainerDb(consmongo, "MongoDB", "consolidation_db", "Collections:\n• daily_consolidation\n• processed_events")
 
     ContainerDb(redis, "Redis", "Cache", "Chave: consolidation:{date}")
 
     Rel(consumer, rabbitmq, "Consome de", "AMQP")
     Rel(consumer, idempotency, "Verifica duplicidade via")
-    Rel(consumer, calculator, "Aciona")
-    Rel(consumer, irepo, "Persiste via")
+    Rel(consumer, irepo, "Lê consolidação atual via")
+    Rel(consumer, calculator, "Aplica delta via")
+    Rel(consumer, irepo, "Persiste resultado via")
     Rel(consumer, icacheinv, "Invalida cache via")
 
     Rel(idempotency, iidempotencyrepo, "Consulta/registra via")
     Rel(iidempotencyrepo, mongoidemp, "Implementado por")
     Rel(mongoidemp, consmongo, "Lê/escreve", "MongoDB driver")
 
-    Rel(calculator, txreader, "Lê transações via")
-    Rel(txreader, mongotxreader, "Implementado por")
-    Rel(mongotxreader, txmongo, "Lê (read-only)", "MongoDB driver")
-
     Rel(irepo, mongorepo, "Implementado por")
-    Rel(mongorepo, consmongo, "Upsert", "MongoDB driver")
+    Rel(mongorepo, consmongo, "Find/Upsert", "MongoDB driver")
 
     Rel(icacheinv, redissinv, "Implementado por")
     Rel(redissinv, redis, "DEL key", "Redis protocol")
@@ -185,11 +176,17 @@ FLUXO (Cache-First):
 **Ciclo completo de um evento:**
 ```
 1. DEQUEUE mensagem de consolidation.input
+   (evento carrega: type, amount, date, idempotencyKey)
 2. Verificar idempotência (já processou este evento?)
    ├── SIM → ACK e ignorar
    └── NÃO → prosseguir
-3. Ler transações do dia (transactions_db)
-4. Calcular saldo: balance = sum(credits) - sum(debits)
+3. Ler DailyConsolidation atual de consolidation_db para a data do evento
+   (ou criar novo registro com zeros se for o primeiro lançamento do dia)
+4. Aplicar delta do evento:
+   ├── se type = CREDIT → totalCredits += amount
+   └── se type = DEBIT  → totalDebits  += amount
+   recalcular: balance = totalCredits - totalDebits
+               transactionCount += 1
 5. BEGIN MongoDB session
    ├── UPSERT daily_consolidation
    └── INSERT processed_events (idempotência)
@@ -216,37 +213,31 @@ EM CASO DE FALHA:
 ---
 
 #### ConsolidationCalculator
-**Responsabilidade:** Calcular saldo diário a partir das transações
+**Responsabilidade:** Aplicar delta incremental ao consolidado do dia
+
+O Calculator **não lê de nenhum banco**. Recebe os dados do evento e o estado atual do consolidado, aplica a lógica de negócio e retorna o documento atualizado.
 
 **Algoritmo:**
 ```
-DADO: data = evento.date
+ENTRADA:
+  evento   = { type: CREDIT|DEBIT, amount: decimal, date: DateOnly }
+  atual    = DailyConsolidation atual (ou novo com zeros)
 
-BUSCAR todas as transações WHERE date = data
-CALCULAR:
-  totalCredits = SUM(amount WHERE type = CREDIT)
-  totalDebits  = SUM(amount WHERE type = DEBIT)
-  balance      = totalCredits - totalDebits
-  count        = COUNT(*)
+APLICAR DELTA:
+  se type = CREDIT → atual.totalCredits += amount
+  se type = DEBIT  → atual.totalDebits  += amount
+  atual.balance          = atual.totalCredits - atual.totalDebits
+  atual.transactionCount += 1
+  atual.lastUpdated       = DateTime.UtcNow
 
 RETORNAR DailyConsolidation {
-  date, totalCredits, totalDebits, balance, transactionCount
+  date, totalCredits, totalDebits, balance, transactionCount, lastUpdated
 }
 ```
 
 **Precisão:** Usa `decimal` (nunca `float`/`double`) para evitar erros de arredondamento financeiro.
 
----
-
-#### MongoTransactionReader
-**Responsabilidade:** Ler transações do serviço de lançamentos (cross-database)
-
-- Conecta em `transactions_db` (outro database, mesmo MongoDB)
-- Acesso **read-only** — nunca escreve na base de Transactions
-- Projeção mínima: apenas `type` e `amount` (sem `description`, `category`)
-- Uso eficiente: evita trazer dados desnecessários
-
-**Nota arquitetural:** Acessar diretamente `transactions_db` é um trade-off consciente — a alternativa seria uma API síncrona entre serviços, o que criaria acoplamento forte. Ver ADR-002.
+**Isolamento:** Este componente opera exclusivamente em `consolidation_db`. O evento `TransactionCreated` carrega todos os dados necessários (type + amount + date), conforme definido em ADR-002.
 
 ---
 
@@ -269,25 +260,22 @@ sequenceDiagram
     participant MQ as RabbitMQ
     participant CONS as TransactionCreatedConsumer
     participant IDEMP as IdempotencyChecker
-    participant CALC as ConsolidationCalculator
-    participant TXREAD as MongoTransactionReader
     participant REPO as MongoConsolidationRepository
+    participant CALC as ConsolidationCalculator
     participant IDMPSTORE as MongoIdempotencyRepository
     participant CACHE as RedisCacheInvalidator
 
-    MQ->>CONS: TransactionCreated { date: "2024-03-15", idempotencyKey: "uuid" }
+    MQ->>CONS: TransactionCreated { type: CREDIT, amount: 500, date: "2024-03-15", idempotencyKey: "uuid" }
 
     CONS->>IDEMP: AlreadyProcessed("uuid")?
     IDEMP-->>CONS: ❌ Não processado
 
-    CONS->>CALC: Calculate(date: "2024-03-15")
+    CONS->>REPO: GetByDateAsync("2024-03-15")
+    REPO-->>CONS: DailyConsolidation { credits:300, debits:150, balance:150, count:2 }
 
-    CALC->>TXREAD: GetByDateAsync("2024-03-15")
-    TXREAD-->>CALC: [{ CREDIT, 500 }, { DEBIT, 150 }, { CREDIT, 300 }]
-
-    Note over CALC: totalCredits = 800<br/>totalDebits = 150<br/>balance = 650<br/>count = 3
-
-    CALC-->>CONS: DailyConsolidation { date, credits:800, debits:150, balance:650 }
+    CONS->>CALC: ApplyDelta(consolidation, type:CREDIT, amount:500)
+    Note over CALC: totalCredits = 300 + 500 = 800<br/>totalDebits  = 150<br/>balance      = 650<br/>count        = 3
+    CALC-->>CONS: DailyConsolidation { date, credits:800, debits:150, balance:650, count:3 }
 
     Note over CONS,IDMPSTORE: MongoDB Transaction (Atomicidade)
     CONS->>REPO: UpsertAsync(consolidation, session)
@@ -460,7 +448,8 @@ Cenário: Redis está down
 | **At-Least-Once + Idempotência** | Worker + IdempotencyChecker | Segurança de reprocessamento |
 | **Upsert** | MongoConsolidationRepository | Uma data = um documento (RN-04) |
 | **Fire-and-forget** | RedisCacheInvalidator | Falha de cache não aborta processamento |
-| **Cross-database read** | MongoTransactionReader | Evita chamada HTTP síncrona (acoplamento) |
+| **Event-Carried State Transfer** | TransactionCreatedConsumer | Worker usa dados do evento — sem cross-DB read |
+| **Delta Incremental** | ConsolidationCalculator | Atualização eficiente sem recálculo completo |
 
 ---
 

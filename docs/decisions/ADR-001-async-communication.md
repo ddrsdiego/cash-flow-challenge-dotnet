@@ -9,7 +9,7 @@
 | **Data** | 2026-03-19 |
 | **Decisores** | Time de Arquitetura |
 | **Revisores** | — |
-| **ADRs Relacionadas** | [ADR-002](ADR-002-database-per-service.md), [ADR-003](ADR-003-cqrs-consolidation.md) |
+| **ADRs Relacionadas** | [ADR-002](ADR-002-database-per-service.md), [ADR-003](ADR-003-user-context-propagation.md) |
 
 ---
 
@@ -192,7 +192,7 @@ A persistência do lançamento e o registro do evento a ser publicado ocorrem de
 │                                                                  │
 │   Registro do lançamento    +    Evento pendente de publicação   │
 │                                                                  │
-│   ← CONFIRMA ou DESCARTA ambos juntos →                         │
+│   ← CONFIRMA ou DESCARTA ambos juntos →                          │
 └──────────────────────────────────────────────────────────────────┘
                         ↓
         Mecanismo de retransmissão confiável
@@ -246,7 +246,7 @@ Após o commit da transação, um mecanismo de retransmissão confiável se resp
 ### ADRs que Dependem desta Decisão
 
 - **[ADR-002](ADR-002-database-per-service.md):** A decisão de usar database-per-service é parcialmente motivada pela necessidade de manter o registro de eventos pendentes (outbox) e os dados de transações no mesmo contexto transacional, garantindo atomicidade.
-- **[ADR-003](ADR-003-cqrs-consolidation.md):** A separação entre Worker (write path) e API (read path) no Consolidation Service é consequência direta da comunicação assíncrona — o Worker é o consumer das mensagens RabbitMQ.
+- **[ADR-003](ADR-003-user-context-propagation.md):** O evento `TransactionCreated` publicado via Outbox inclui o campo `userId` (extraído do JWT). A estrutura do evento é contrato entre os contextos — qualquer alteração exige versionamento.
 
 ---
 
