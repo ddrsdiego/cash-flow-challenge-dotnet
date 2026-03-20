@@ -10,6 +10,14 @@
     <PackageReference Include="MongoDB.Driver" />
     <PackageReference Include="MassTransit.Abstractions" />
     <PackageReference Include="CSharpFunctionalExtensions" />
+    
+    <!-- Serilog and OpenTelemetry for infrastructure extensions -->
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="Serilog.Sinks.OpenTelemetry" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
   </ItemGroup>
 
 </Project>

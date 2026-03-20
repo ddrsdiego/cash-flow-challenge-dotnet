@@ -1,11 +1,11 @@
 {
   "vhosts": [
-    { "name": "cashflow" }
+    { "name": "/" }
   ],
   "permissions": [
     {
       "user": "cashflow",
-      "vhost": "cashflow",
+      "vhost": "/",
       "configure": ".*",
       "write": ".*",
       "read": ".*"
@@ -14,14 +14,14 @@
   "exchanges": [
     {
       "name": "cashflow.transactions",
-      "vhost": "cashflow",
+      "vhost": "/",
       "type": "topic",
       "durable": true,
       "auto_delete": false
     },
     {
       "name": "cashflow.transactions.dlx",
-      "vhost": "cashflow",
+      "vhost": "/",
       "type": "fanout",
       "durable": true,
       "auto_delete": false
@@ -30,7 +30,7 @@
   "queues": [
     {
       "name": "consolidation.process",
-      "vhost": "cashflow",
+      "vhost": "/",
       "durable": true,
       "auto_delete": false,
       "arguments": {
@@ -41,7 +41,7 @@
     },
     {
       "name": "consolidation.process.dlq",
-      "vhost": "cashflow",
+      "vhost": "/",
       "durable": true,
       "auto_delete": false,
       "arguments": {}
@@ -50,7 +50,7 @@
   "bindings": [
     {
       "source": "cashflow.transactions",
-      "vhost": "cashflow",
+      "vhost": "/",
       "destination": "consolidation.process",
       "destination_type": "queue",
       "routing_key": "transaction.created",
@@ -58,7 +58,7 @@
     },
     {
       "source": "cashflow.transactions",
-      "vhost": "cashflow",
+      "vhost": "/",
       "destination": "consolidation.process",
       "destination_type": "queue",
       "routing_key": "transaction.updated",
@@ -66,7 +66,7 @@
     },
     {
       "source": "cashflow.transactions.dlx",
-      "vhost": "cashflow",
+      "vhost": "/",
       "destination": "consolidation.process.dlq",
       "destination_type": "queue",
       "routing_key": "",

@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>CashFlow.Transactions.API</AssemblyName>
+    <RootNamespace>CashFlow.Transactions.API</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- API -->
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Swashbuckle.AspNetCore" />
+    <PackageReference Include="Swashbuckle.AspNetCore.Annotations" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+
+    <!-- CQRS -->
+    <PackageReference Include="MediatR" />
+
+    <!-- Validation -->
+    <PackageReference Include="FluentValidation.AspNetCore" />
+
+    <!-- MongoDB -->
+    <PackageReference Include="MongoDB.Driver" />
+
+    <!-- MassTransit -->
+    <PackageReference Include="MassTransit" />
+    <PackageReference Include="MassTransit.MongoDb" />
+    <PackageReference Include="MassTransit.RabbitMQ" />
+
+    <!-- Functional Extensions -->
+    <PackageReference Include="CSharpFunctionalExtensions" />
+
+    <!-- Observability -->
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="Serilog.Sinks.OpenTelemetry" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\CashFlow.SharedKernel\CashFlow.SharedKernel.csproj" />
+  </ItemGroup>
+  
+</Project>

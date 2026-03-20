@@ -405,8 +405,8 @@ services:
       RateLimiting__PermitLimit: 100
       RateLimiting__WindowSeconds: 60
       # --- Observability ---
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
-      OTEL_SERVICE_NAME: cashflow-gateway
+      OpenTelemetry__OtlpEndpoint: "http://otel-collector:4317"
+      OpenTelemetry__ServiceName: cashflow-gateway
       # --- Downstream Services ---
       ReverseProxy__Clusters__transactions__Destinations__default__Address: "http://cashflow-transactions-api:8080"
       ReverseProxy__Clusters__consolidation__Destinations__default__Address: "http://cashflow-consolidation-api:8080"
@@ -452,8 +452,8 @@ services:
       Authentication__Authority: "http://keycloak:8080/realms/cashflow"
       Authentication__Audience: cashflow-api
       # --- Observability ---
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
-      OTEL_SERVICE_NAME: cashflow-transactions-api
+      OpenTelemetry__OtlpEndpoint: "http://otel-collector:4317"
+      OpenTelemetry__ServiceName: cashflow-transactions-api
     ports:
       - "${TRANSACTIONS_API_PORT:-8081}:8080"
     networks:
@@ -515,7 +515,7 @@ services:
   cashflow-consolidation-worker:
     build:
       context: .
-      dockerfile: src/CashFlow.Consolidation.Worker/Dockerfile
+      dockerfile: src/consolidation/CashFlow.Consolidation.Worker/Dockerfile
     container_name: cashflow-consolidation-worker
     restart: unless-stopped
     profiles: ["app"]

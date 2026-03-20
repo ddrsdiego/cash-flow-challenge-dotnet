@@ -1,19 +1,15 @@
-using System;
-using CashFlow.SharedKernel.Domain.Enums;
+using System.Collections.Generic;
 using MassTransit;
 
 namespace CashFlow.SharedKernel.Messages;
 
 /// <summary>
-/// Event published when a new financial transaction is successfully created.
-/// Consumed by the Consolidation Worker to recalculate the daily balance.
+/// Event published when a batch of new financial transactions is successfully created.
+/// Contains a batch of transactions to be processed by the Consolidation Worker
+/// to recalculate daily balance and consolidation data.
 /// </summary>
 [MessageUrn("transaction-created")]
 public sealed record TransactionCreatedEvent(
-    string TransactionId,
-    string UserId,
-    TransactionType Type,
-    decimal Amount,
-    Category Category,
-    DateTime Date,
-    string TracerId);
+    string BatchId,
+    string TracerId,
+    IReadOnlyList<TransactionItem> Transactions);
