@@ -1,0 +1,11 @@
+{
+  "Version": 1,
+  "Hash": "khH6nWfOa41jTkyH5By3V0kCG0VdKzZUJjIPYULe5gA=",
+  "Source": "CashFlow.Consolidation.API",
+  "BasePath": "_content/CashFlow.Consolidation.API",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": []
+}

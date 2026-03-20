@@ -1,0 +1,13 @@
+c:\Users\User\OneDrive\Desenvolvimento\dotnet\cash-flow-challenge-dotnet\src\CashFlow.SharedKernel\bin\Debug\net8.0\CashFlow.SharedKernel.deps.json
+c:\Users\User\OneDrive\Desenvolvimento\dotnet\cash-flow-challenge-dotnet\src\CashFlow.SharedKernel\bin\Debug\net8.0\CashFlow.SharedKernel.dll
+c:\Users\User\OneDrive\Desenvolvimento\dotnet\cash-flow-challenge-dotnet\src\CashFlow.SharedKernel\bin\Debug\net8.0\CashFlow.SharedKernel.pdb
+c:\Users\User\OneDrive\Desenvolvimento\dotnet\cash-flow-challenge-dotnet\src\CashFlow.SharedKernel\obj\Debug\net8.0\CashFlow.SharedKernel.csproj.AssemblyReference.cache
+c:\Users\User\OneDrive\Desenvolvimento\dotnet\cash-flow-challenge-dotnet\src\CashFlow.SharedKernel\obj\Debug\net8.0\CashFlow.SharedKernel.GeneratedMSBuildEditorConfig.editorconfig
+c:\Users\User\OneDrive\Desenvolvimento\dotnet\cash-flow-challenge-dotnet\src\CashFlow.SharedKernel\obj\Debug\net8.0\CashFlow.SharedKernel.AssemblyInfoInputs.cache
+c:\Users\User\OneDrive\Desenvolvimento\dotnet\cash-flow-challenge-dotnet\src\CashFlow.SharedKernel\obj\Debug\net8.0\CashFlow.SharedKernel.AssemblyInfo.cs
+c:\Users\User\OneDrive\Desenvolvimento\dotnet\cash-flow-challenge-dotnet\src\CashFlow.SharedKernel\obj\Debug\net8.0\CashFlow.SharedKernel.csproj.CoreCompileInputs.cache
+c:\Users\User\OneDrive\Desenvolvimento\dotnet\cash-flow-challenge-dotnet\src\CashFlow.SharedKernel\obj\Debug\net8.0\CashFlow.SharedKernel.sourcelink.json
+c:\Users\User\OneDrive\Desenvolvimento\dotnet\cash-flow-challenge-dotnet\src\CashFlow.SharedKernel\obj\Debug\net8.0\CashFlow.SharedKernel.dll
+c:\Users\User\OneDrive\Desenvolvimento\dotnet\cash-flow-challenge-dotnet\src\CashFlow.SharedKernel\obj\Debug\net8.0\refint\CashFlow.SharedKernel.dll
+c:\Users\User\OneDrive\Desenvolvimento\dotnet\cash-flow-challenge-dotnet\src\CashFlow.SharedKernel\obj\Debug\net8.0\CashFlow.SharedKernel.pdb
+c:\Users\User\OneDrive\Desenvolvimento\dotnet\cash-flow-challenge-dotnet\src\CashFlow.SharedKernel\obj\Debug\net8.0\ref\CashFlow.SharedKernel.dll

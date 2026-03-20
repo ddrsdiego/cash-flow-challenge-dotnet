@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>CashFlow.SharedKernel</AssemblyName>
+    <RootNamespace>CashFlow.SharedKernel</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MongoDB.Driver" />
+    <PackageReference Include="MassTransit.Abstractions" />
+    <PackageReference Include="CSharpFunctionalExtensions" />
+  </ItemGroup>
+
+</Project>

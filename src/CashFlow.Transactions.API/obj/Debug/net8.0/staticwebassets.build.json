@@ -1,0 +1,11 @@
+{
+  "Version": 1,
+  "Hash": "JinecwUx8lQ5WV4J2SvBR9RPHaK4kXtg4MK1+e4sjzI=",
+  "Source": "CashFlow.Transactions.API",
+  "BasePath": "_content/CashFlow.Transactions.API",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": []
+}
