@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>CashFlow.Consolidation.API</AssemblyName>
+    <RootNamespace>CashFlow.Consolidation.API</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Swashbuckle.AspNetCore" />
+    
+    <!-- MediatR for command/query pattern -->
+    <PackageReference Include="MediatR" />
+    
+    <!-- MassTransit for messaging -->
+    <PackageReference Include="MassTransit" />
+    <PackageReference Include="MassTransit.RabbitMQ" />
+    <PackageReference Include="MassTransit.MongoDb" />
+    
+    <!-- MongoDB -->
+    <PackageReference Include="MongoDB.Driver" />
+    
+    <!-- Functional programming utilities -->
+    <PackageReference Include="CSharpFunctionalExtensions" />
+    
+    <!-- Observability -->
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="Serilog.Sinks.OpenTelemetry" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\CashFlow.SharedKernel\CashFlow.SharedKernel.csproj" />
+  </ItemGroup>
+
+</Project>

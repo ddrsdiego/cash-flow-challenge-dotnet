@@ -1,0 +1,116 @@
+{
+  "realm": "cashflow",
+  "enabled": true,
+  "displayName": "CashFlow System",
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "bruteForceProtected": true,
+  "failureFactor": 5,
+  "waitIncrementSeconds": 60,
+  "maxFailureWaitSeconds": 900,
+  "maxDeltaTimeSeconds": 43200,
+  "roles": {
+    "realm": [
+      {
+        "name": "merchant",
+        "description": "Comerciante — acesso a lançamentos e consulta de consolidado"
+      },
+      {
+        "name": "admin",
+        "description": "Administrador — acesso total"
+      },
+      {
+        "name": "readonly",
+        "description": "Somente leitura — consulta de consolidado apenas"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "cashflow-api",
+      "name": "CashFlow API Gateway",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "cashflow-api-secret-change-in-production",
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "authorizationServicesEnabled": false,
+      "standardFlowEnabled": true,
+      "redirectUris": ["http://localhost:8080/*"],
+      "webOrigins": ["http://localhost:8080"],
+      "protocol": "openid-connect",
+      "defaultClientScopes": ["openid", "profile", "email", "roles"],
+      "protocolMappers": [
+        {
+          "name": "realm-roles-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "claim.name": "realm_roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "access.token.claim": "true",
+            "id.token.claim": "true"
+          }
+        },
+        {
+          "name": "audience-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "cashflow-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "cashflow-service",
+      "name": "CashFlow Service-to-Service",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "cashflow-service-secret-change-in-production",
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "bearerOnly": false,
+      "protocol": "openid-connect"
+    }
+  ],
+  "users": [
+    {
+      "username": "merchant-demo",
+      "email": "merchant@demo.com",
+      "firstName": "Merchant",
+      "lastName": "Demo",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "demo123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["merchant"]
+    },
+    {
+      "username": "admin-demo",
+      "email": "admin@demo.com",
+      "firstName": "Admin",
+      "lastName": "Demo",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["admin"]
+    }
+  ]
+}

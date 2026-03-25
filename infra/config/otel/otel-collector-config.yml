@@ -1,0 +1,89 @@
+# ============================================
+# OpenTelemetry Collector Configuration
+# ============================================
+# Pipeline:
+#   .NET Services ──OTLP gRPC(:4317)──► OTel Collector
+#     ├── traces  → Jaeger
+#     ├── metrics → Prometheus (scrape :8889)
+#     └── logs    → Seq (OTLP HTTP)
+#
+# Logs strategy (Docker Desktop + WSL 2):
+#   App writes JSON to stdout (Serilog Console Sink) for `docker logs`
+#   App sends logs via OpenTelemetry Logs SDK through same OTLP channel
+#   OTel Collector routes logs to Seq with TraceId/SpanId correlation
+#   Zero direct HTTP calls from app to Seq
+# ============================================
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
+
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: 256
+    spike_limit_mib: 64
+
+  resource:
+    attributes:
+      - key: environment
+        value: development
+        action: upsert
+      - key: service.namespace
+        value: cashflow
+        action: upsert
+
+exporters:
+  # Traces → Jaeger
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+  # Metrics → Prometheus
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    namespace: cashflow
+    resource_to_telemetry_conversion:
+      enabled: true
+
+  # Logs → Seq via OTLP
+  otlphttp/seq:
+    endpoint: http://seq:5341/ingest/otlp
+    tls:
+      insecure: true
+
+  # Debug (development only)
+  debug:
+    verbosity: basic
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  zpages:
+    endpoint: 0.0.0.0:55679
+
+service:
+  extensions: [health_check, zpages]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, resource]
+      exporters: [otlp/jaeger, debug]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, resource]
+      exporters: [prometheus, debug]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, resource]
+      exporters: [otlphttp/seq, debug]

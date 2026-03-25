@@ -1,0 +1,76 @@
+{
+  "vhosts": [
+    { "name": "/" }
+  ],
+  "permissions": [
+    {
+      "user": "cashflow",
+      "vhost": "/",
+      "configure": ".*",
+      "write": ".*",
+      "read": ".*"
+    }
+  ],
+  "exchanges": [
+    {
+      "name": "cashflow.transactions",
+      "vhost": "/",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false
+    },
+    {
+      "name": "cashflow.transactions.dlx",
+      "vhost": "/",
+      "type": "fanout",
+      "durable": true,
+      "auto_delete": false
+    }
+  ],
+  "queues": [
+    {
+      "name": "consolidation.process",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "cashflow.transactions.dlx",
+        "x-message-ttl": 300000,
+        "x-max-retries": 3
+      }
+    },
+    {
+      "name": "consolidation.process.dlq",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    }
+  ],
+  "bindings": [
+    {
+      "source": "cashflow.transactions",
+      "vhost": "/",
+      "destination": "consolidation.process",
+      "destination_type": "queue",
+      "routing_key": "transaction.created",
+      "arguments": {}
+    },
+    {
+      "source": "cashflow.transactions",
+      "vhost": "/",
+      "destination": "consolidation.process",
+      "destination_type": "queue",
+      "routing_key": "transaction.updated",
+      "arguments": {}
+    },
+    {
+      "source": "cashflow.transactions.dlx",
+      "vhost": "/",
+      "destination": "consolidation.process.dlq",
+      "destination_type": "queue",
+      "routing_key": "",
+      "arguments": {}
+    }
+  ]
+}
