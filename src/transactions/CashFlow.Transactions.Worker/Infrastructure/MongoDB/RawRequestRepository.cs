@@ -15,7 +15,8 @@ namespace CashFlow.Transactions.Worker.Infrastructure.MongoDB;
 /// Repository for managing raw transaction requests in the batch processing pipeline.
 /// Full implementation in Worker: FindPendingAsync, MarkAsDispatchedAsync, MarkAsProcessedAsync, GetByBatchIdAsync.
 /// </summary>
-public class RawRequestRepository : IRawRequestRepository
+public class RawRequestRepository :
+    IRawRequestRepository
 {
     private readonly ITransactionsWorkerMongoDbContext _context;
 
@@ -63,13 +64,9 @@ public class RawRequestRepository : IRawRequestRepository
         return requests.AsReadOnly();
     }
 
-<<<<<<< HEAD
-    public async Task MarkAsDispatchedAsync(IEnumerable<string> requestIds, string batchId,
-=======
     public async Task MarkAsDispatchedAsync(
         IEnumerable<string> requestIds,
         string batchId,
->>>>>>> 55c15ded73d5f33778101db5027f405e73103f12
         CancellationToken cancellationToken)
     {
         var ids = requestIds.ToList();
@@ -103,22 +100,13 @@ public class RawRequestRepository : IRawRequestRepository
             .Find(filter)
             .ToListAsync(cancellationToken);
 
-<<<<<<< HEAD
-=======
-        // Reset status back to Pending for retry
->>>>>>> 55c15ded73d5f33778101db5027f405e73103f12
         if (orphaned.Count > 0)
         {
             var orphanedIds = orphaned.Select(r => r.Id).ToList();
             var orphanFilter = Builders<RawRequest>.Filter.In(r => r.Id, orphanedIds);
             var resetUpdate = Builders<RawRequest>.Update
                 .Set(r => r.Status, RawRequestStatus.Pending)
-<<<<<<< HEAD
                 .Set(r => r.DispatchedAt, default);
-=======
-                .Set(r => r.DispatchedAt, default(DateTime));
->>>>>>> 55c15ded73d5f33778101db5027f405e73103f12
-
             await _context.RawRequests.UpdateManyAsync(orphanFilter, resetUpdate, cancellationToken: cancellationToken);
         }
 

@@ -5,7 +5,7 @@
 | Campo | Valor |
 |-------|-------|
 | **ID** | ADR-003 |
-| **Status** | Accepted |
+| **Status** | Superseded by ADR-007 |
 | **Data** | 2026-03-19 |
 | **Última Revisão** | 2026-03-25 (revisão para implementar defense in depth JWT) |
 | **Decisores** | Time de Arquitetura |
@@ -262,5 +262,19 @@ A evolução para multi-tenancy introduziria um identificador de comerciante com
 - ADR-004: Gateway continua como validador primeira camada
 - ADR-005: Keycloak continua como IdP, mas agora chamado por serviços downstream também
 - ADR-006: OpenTelemetry continua correlacionando por userId do header e/ou JWT
+
+### Revisão 3 (2026-03-26) — Elevação de Defense in Depth a ADR Independente
+
+**Contexto:** A auditoria de conformidade com Martin Fowler pattern identificou que a Revisão 2 continha uma **mudança de decisão arquitetural** (não apenas simplificação de formato), que viola o princípio de imutabilidade de ADR aceitos.
+
+**Decisão:** 
+- Marcar ADR-003 como "Superseded by ADR-007"
+- Criar ADR-007 (Defense in Depth JWT) como decisão canônica independente
+- ADR-003 preservado como registro histórico da evolução arquitetural
+
+**Justificativa:**
+- Imutabilidade: ADRs aceitos não devem ter decisões reescritas
+- Clareza: Decisão vigente está em um único documento sem contradições internas
+- Rastreabilidade: Fica registrado o momento em que a arquitetura evoluiu
 
 

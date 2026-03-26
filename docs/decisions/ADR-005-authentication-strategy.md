@@ -263,3 +263,13 @@ A verificação de roles é responsabilidade exclusiva do API Gateway — servi�
 - ADR-004 (API Gateway): `docs/decisions/ADR-004-api-gateway.md` — JWT validado no ponto de entrada
 - Autenticação detalhada: `docs/security/02-authentication-authorization.md`
 - Arquitetura de segurança: `docs/security/01-security-architecture.md` — Controles C3, C4, C21, C22, C23
+
+---
+
+## Histórico de Revisões
+
+### Revisão 1 (2026-03-19)
+Decisão inicial de Keycloak como Identity Provider centralizado, com OAuth 2.0 + OpenID Connect para autenticação, JWT RS256 como token, e RBAC para controle de acesso granular.
+
+### Revisão 2 (2026-03-25)
+Confirmação de alinhamento entre implementação e decisão arquitetural — nenhuma alteração no statement da decisão. Implementação executada conforme especificado na ADR, validando que Keycloak, fluxos de autenticação e modelo de autorização estão operacionais e alinhados com requisitos de segurança.

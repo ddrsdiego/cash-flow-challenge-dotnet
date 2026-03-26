@@ -1,13 +1,9 @@
 using System;
 using System.Reflection;
-using System.Threading.Tasks;
 using CashFlow.SharedKernel.Infrastructure;
 using CashFlow.SharedKernel.Infrastructure.Extensions;
 using CashFlow.SharedKernel.Infrastructure.Messaging;
-<<<<<<< HEAD
 using CashFlow.SharedKernel.Infrastructure.MongoIndex;
-=======
->>>>>>> 55c15ded73d5f33778101db5027f405e73103f12
 using CashFlow.SharedKernel.Interfaces;
 using CashFlow.SharedKernel.Messages;
 using CashFlow.Transactions.Worker.Infrastructure.MongoDB;
@@ -15,7 +11,6 @@ using MassTransit;
 using MediatR;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using MongoDB.Driver;
 
 namespace CashFlow.Transactions.Worker.Extensions;
@@ -29,16 +24,14 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRawRequestRepository, RawRequestRepository>();
         services.AddScoped<IDistributedLockRepository, DistributedLockRepository>();
         services.AddScoped<ITransactionRepository, TransactionRepository>();
-<<<<<<< HEAD
-        
+
         // Register MongoDB index configurators
         services.AddScoped<IRawRequestIndexConfig, RawRequestIndexConfig>();
         services.AddScoped<IMongoIndexConfigurator>(provider => provider.GetRequiredService<IRawRequestIndexConfig>());
-        
+
         services.AddScoped<IDistributedLockIndexConfig, DistributedLockIndexConfig>();
-        services.AddScoped<IMongoIndexConfigurator>(provider => provider.GetRequiredService<IDistributedLockIndexConfig>());
-=======
->>>>>>> 55c15ded73d5f33778101db5027f405e73103f12
+        services.AddScoped<IMongoIndexConfigurator>(provider =>
+            provider.GetRequiredService<IDistributedLockIndexConfig>());
     }
 
     public static void AddMassTransitWithRabbitMq(this IServiceCollection services, IConfiguration configuration)
@@ -99,10 +92,7 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        services.AddOpenTelemetryCore(configuration, tracing =>
-        {
-            tracing.AddSource("MassTransit");
-        });
+        services.AddOpenTelemetryCore(configuration, tracing => { tracing.AddSource("MassTransit"); });
         return services;
     }
 
@@ -110,17 +100,4 @@ public static class ServiceCollectionExtensions
     {
         services.AddHostedService<Workers.BatcherBackgroundService>();
     }
-
-<<<<<<< HEAD
-=======
-    public static async Task EnsureMongoDbIndexesAsync(this IHost host)
-    {
-        using (var scope = host.Services.CreateScope())
-        {
-            var context = scope.ServiceProvider.GetRequiredService<ITransactionsWorkerMongoDbContext>();
-            var logger = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<Program>>();
-            await MongoDbIndexSetup.EnsureIndexesAsync(context, logger);
-        }
-    }
->>>>>>> 55c15ded73d5f33778101db5027f405e73103f12
 }

@@ -260,3 +260,13 @@ Métrica (Grafana): spike no contador de erros da Transactions API no mesmo time
 - Arquitetura de containers: `docs/architecture/02-container-diagram.md` — Stack de Observabilidade
 - Requisito não funcional: `docs/requirements/02-non-functional-requirements.md` — Seção 4 (Observabilidade)
 - Documentação operacional: `docs/operations/02-monitoring-observability.md`
+
+---
+
+## Histórico de Revisões
+
+### Revisão 1 (2026-03-19)
+Decisão inicial de OpenTelemetry como camada de instrumentação única e vendor-neutral, com Jaeger para distributed tracing, Prometheus + Grafana para métricas, e Seq para logs estruturados.
+
+### Revisão 2 (2026-03-25)
+Confirmação de alinhamento entre implementação e decisão arquitetural — nenhuma alteração no statement da decisão. Stack de observabilidade instrumentado conforme especificado (OTLP SDK nos serviços, OTel Collector, Jaeger, Prometheus, Grafana, Seq), com correlação de contexto (traceId) propagada em todos os sinais.

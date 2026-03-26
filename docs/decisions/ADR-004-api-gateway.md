@@ -229,3 +229,13 @@ YARP é desenvolvido pela Microsoft, tem integração de primeira classe com o A
 - Padrões arquiteturais: `docs/architecture/06-architectural-patterns.md` — Seção 9 (API Gateway)
 - Arquitetura de segurança: `docs/security/01-security-architecture.md` — Controles C2 a C7
 - Requisito não funcional: `docs/requirements/02-non-functional-requirements.md`
+
+---
+
+## Histórico de Revisões
+
+### Revisão 1 (2026-03-19)
+Decisão inicial de YARP como API Gateway, centralizando autenticação, autorização, rate limiting e roteamento.
+
+### Revisão 2 (2026-03-25)
+Clarificação do modelo de defense in depth com validação duplicada de JWT: o Gateway valida o JWT no ponto de entrada (primeira barreira); serviços downstream também validam para garantir que nenhuma requisição interna forjada consegue contornar a segurança do Gateway.
