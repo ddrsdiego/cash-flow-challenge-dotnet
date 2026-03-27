@@ -17,7 +17,7 @@ using Microsoft.AspNetCore.Routing;
 
 public static class TransactionEndpoints
 {
-    public static IEndpointRouteBuilder MapTransactionEndpoints(this IEndpointRouteBuilder app)
+    public static void MapTransactionEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/v1/transactions")
             .RequireAuthorization()
@@ -34,24 +34,21 @@ public static class TransactionEndpoints
         group.MapGet("/{id}", GetTransactionByIdAsync)
             .WithName("GetTransactionById")
             .WithSummary("Get a transaction by ID")
-            .Produces<object>()
-            .Produces<object>(401)
-            .Produces<object>(404)
-            .Produces<object>(500);
+            .Produces<TransactionResponse>()
+            .Produces<ErrorResponse>(401)
+            .Produces<ErrorResponse>(404)
+            .Produces<ErrorResponse>(500);
 
         group.MapGet("/", ListTransactionsAsync)
             .WithName("ListTransactions")
             .WithSummary("List transactions with pagination")
-            .Produces<object>()
-            .Produces<object>(400)
-            .Produces<object>(401)
-            .Produces<object>(500);
-
-        return app;
+            .Produces<TransactionResponse>()
+            .Produces<ErrorResponse>(400)
+            .Produces<ErrorResponse>(401)
+            .Produces<ErrorResponse>(500);
     }
 
-    private static async Task<IResult> CreateTransactionAsync(CreateTransactionRequest request,
-        IMediator mediator,
+    private static async Task<IResult> CreateTransactionAsync(CreateTransactionRequest request, IMediator mediator,
         HttpContext context,
         CancellationToken cancellationToken)
     {

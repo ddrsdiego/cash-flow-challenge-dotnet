@@ -276,5 +276,3 @@ A evolução para multi-tenancy introduziria um identificador de comerciante com
 - Imutabilidade: ADRs aceitos não devem ter decisões reescritas
 - Clareza: Decisão vigente está em um único documento sem contradições internas
 - Rastreabilidade: Fica registrado o momento em que a arquitetura evoluiu
-
-
