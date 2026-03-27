@@ -42,7 +42,6 @@ public sealed class IngestTransactionsBatchCommandHandler :
         try
         {
             var receivedTransactions = MapTransactionsAsync(request);
-
             return await PersistBatchAsync(request, receivedTransactions, cancellationToken);
         }
         catch (Exception ex)

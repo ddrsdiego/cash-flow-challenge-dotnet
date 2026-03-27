@@ -20,7 +20,8 @@ public interface IRawRequestIndexConfig : IMongoIndexConfigurator;
 /// Collection: raw_requests
 /// </summary>
 [ExcludeFromCodeCoverage]
-public sealed class RawRequestIndexConfig : IRawRequestIndexConfig
+public sealed class RawRequestIndexConfig :
+    IRawRequestIndexConfig
 {
     private readonly IMongoCollection<RawRequest> _collection;
     private readonly ILogger<RawRequestIndexConfig> _logger;

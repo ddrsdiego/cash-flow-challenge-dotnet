@@ -10,7 +10,8 @@ using MassTransit;
 using MediatR;
 using Microsoft.Extensions.Logging;
 
-public sealed class DailyConsolidationUpdatedConsumer : IConsumer<DailyConsolidationUpdatedEvent>
+public sealed class DailyConsolidationUpdatedConsumer :
+    IConsumer<DailyConsolidationUpdatedEvent>
 {
     private readonly IMediator _mediator;
     private readonly ILogger<DailyConsolidationUpdatedConsumer> _logger;

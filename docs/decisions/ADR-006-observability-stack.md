@@ -7,10 +7,10 @@
 | **ID** | ADR-006 |
 | **Status** | Accepted |
 | **Data** | 2026-03-19 |
-| **Última Revisão** | 2026-03-25 (sem alterações — implementação alinhada) |
+| **Última Revisão** | 2026-03-27 (revisão formal — ajustes de conformidade Fowler) |
 | **Decisores** | Time de Arquitetura |
-| **Revisores** | — |
-| **ADRs Relacionadas** | [ADR-001](ADR-001-async-communication.md), [ADR-004](ADR-004-api-gateway.md) |
+| **Revisores** | Time de Arquitetura |
+| **ADRs Relacionadas** | [ADR-001](ADR-001-async-communication.md), [ADR-004](ADR-004-api-gateway.md), [ADR-007](ADR-007-defense-in-depth-jwt.md) |
 
 ---
 
@@ -26,26 +26,7 @@ Em um sistema distribuído, a ausência de observabilidade torna inviável:
 - Detectar degradação de performance antes que afete os usuários
 - Correlacionar um erro reportado pelo comerciante com os logs e traces correspondentes
 
-### Os Três Pilares da Observabilidade
-
-Observabilidade em sistemas distribuídos requer três sinais complementares:
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    TRÊS PILARES                                 │
-├────────────────┬──────────────────┬─────────────────────────────┤
-│    TRACES      │     MÉTRICAS     │         LOGS                │
-│                │                  │                             │
-│ O que aconteceu│ Quanto aconteceu │ Por que aconteceu           │
-│ em cada etapa? │ em determinado   │ (contexto detalhado         │
-│                │ período?         │  de cada evento)            │
-│ → Latência     │ → Taxa de erros  │ → Mensagem de erro          │
-│ → Dependências │ → Throughput     │ → Stack trace               │
-│ → Sequência    │ → Saturation     │ → Dados de negócio          │
-└────────────────┴──────────────────┴─────────────────────────────┘
-```
-
-Nenhum pilar isolado é suficiente. Um pico de latência (métrica) precisa de traces para identificar qual componente está lento, e de logs para entender o contexto daquela operação específica.
+Observabilidade em sistemas distribuídos requer três sinais complementares — traces, métricas e logs — que devem ser correlacionados via contexto compartilhado (`traceId`). Nenhum pilar isolado é suficiente para diagnóstico efetivo (ver detalhes em `docs/operations/02-monitoring-observability.md`).
 
 ### Problema de Fragmentação de Ferramentas
 
@@ -98,11 +79,31 @@ Datadog é uma plataforma SaaS de observabilidade full-stack muito adotada em pr
 
 ---
 
-### Opção 4: New Relic / Opção 5: AWS CloudWatch
+### Opção 4: New Relic
 
-Ambos são plataformas SaaS com os mesmos trade-offs do Datadog: excelente experiência, custo crescente com volume, lock-in de vendor, impossibilidade de execução offline.
+Plataforma SaaS de APM com foco em performance de aplicações, atrativa para times .NET.
 
-**Veredicto:** Descartados pelos mesmos motivos do Datadog.
+| Critério | Avaliação |
+|----------|-----------|
+| Execução local | ❌ Backend exclusivamente SaaS — impossível rodar offline |
+| Custo | ❌ Cobrado por host e volume de dados ingeridos |
+| Vendor lock-in | ❌ SDK proprietário e formato de dados não-padrão |
+| Open-source | ❌ Proprietário |
+| **Veredicto** | **Descartado — custo por volume e impossibilidade de execução offline incompatíveis com o contexto** |
+
+---
+
+### Opção 5: AWS CloudWatch
+
+Serviço gerenciado de observabilidade da AWS, integrado nativamente ao ecossistema Amazon.
+
+| Critério | Avaliação |
+|----------|-----------|
+| Execução local | ❌ Serviço exclusivo da AWS — sem execução local |
+| Vendor lock-in | ❌ Altíssimo — acoplamento total ao ecossistema AWS |
+| Custo | ❌ Cobrado por métricas, logs e traces ingeridos |
+| Portabilidade | ❌ Migrar para outro cloud exigiria refatoração completa |
+| **Veredicto** | **Descartado — lock-in AWS e ausência de execução local inviabilizam demonstração e desenvolvimento** |
 
 ---
 
@@ -236,6 +237,7 @@ Métrica (Grafana): spike no contador de erros da Transactions API no mesmo time
 | Volume de dados sobrecarrega Prometheus/Seq no MVP | Baixa | Baixo | Retenção curta (7 dias Prometheus, 30 dias Seq); limites de memória configurados |
 | Traces incompletos por falha de exportação OTLP | Baixa | Baixo | Perda de observabilidade, não de funcionalidade; buffer no Collector mitiga picos |
 | Armazenamento Jaeger perdido em restart (Badger in-memory) | Alta (comportamento normal no MVP) | Baixo | Documentado como limitação do MVP; produção usa backend persistente |
+| Acesso não-autorizado a UIs de observabilidade (Grafana, Seq, Jaeger) | Média | Médio | Rede interna isolada no Docker Compose; autenticação habilitada; NetworkPolicy em produção |
 
 ### Evolução para Produção
 
@@ -270,3 +272,6 @@ Decisão inicial de OpenTelemetry como camada de instrumentação única e vendo
 
 ### Revisão 2 (2026-03-25)
 Confirmação de alinhamento entre implementação e decisão arquitetural — nenhuma alteração no statement da decisão. Stack de observabilidade instrumentado conforme especificado (OTLP SDK nos serviços, OTel Collector, Jaeger, Prometheus, Grafana, Seq), com correlação de contexto (traceId) propagada em todos os sinais.
+
+### Revisão 3 (2026-03-27)
+Revisão formal de conformidade com padrão Fowler e ADR-001 (gold standard). Ajustes aplicados: (1) extração da seção educacional "Três Pilares" para referência inline — redução de verbosidade; (2) desagrupamento da análise de Opções 4 (New Relic) e 5 (AWS CloudWatch) com veredictos individuais; (3) adição de risco de segurança das UIs de observabilidade; (4) inclusão de ADR-007 em ADRs Relacionadas. Nenhuma alteração no statement da decisão.

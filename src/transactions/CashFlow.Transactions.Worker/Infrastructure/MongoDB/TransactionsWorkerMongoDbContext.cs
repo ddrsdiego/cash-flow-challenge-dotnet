@@ -17,18 +17,20 @@ public interface ITransactionsWorkerMongoDbContext
     IMongoCollection<Transaction> Transactions { get; }
 }
 
-public sealed class TransactionsWorkerMongoDbContext : ITransactionsWorkerMongoDbContext
+public sealed class TransactionsWorkerMongoDbContext :
+    ITransactionsWorkerMongoDbContext
 {
     private readonly IMongoDatabase _database;
 
     public TransactionsWorkerMongoDbContext(IMongoClient client, IConfiguration configuration)
     {
+        const string databaseConfig = "MongoDB:DatabaseName";
+        
         ArgumentNullException.ThrowIfNull(client);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        var databaseName = configuration["MongoDB:DatabaseName"]
-            ?? throw new InvalidOperationException("MongoDB:DatabaseName configuration is missing.");
-
+        var databaseName = configuration[databaseConfig]
+                           ?? throw new InvalidOperationException("MongoDB:DatabaseName configuration is missing.");
         _database = client.GetDatabase(databaseName);
     }
 

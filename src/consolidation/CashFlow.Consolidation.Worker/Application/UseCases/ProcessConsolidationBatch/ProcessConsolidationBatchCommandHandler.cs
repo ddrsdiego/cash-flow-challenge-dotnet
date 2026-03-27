@@ -29,9 +29,12 @@ public sealed class ProcessConsolidationBatchCommandHandler :
         ITransactionalPublisher transactionalPublisher,
         ILogger<ProcessConsolidationBatchCommandHandler> logger)
     {
-        _receivedTransactionRepository = receivedTransactionRepository ?? throw new ArgumentNullException(nameof(receivedTransactionRepository));
-        _consolidationRepository = consolidationRepository ?? throw new ArgumentNullException(nameof(consolidationRepository));
-        _transactionalPublisher = transactionalPublisher ?? throw new ArgumentNullException(nameof(transactionalPublisher));
+        _receivedTransactionRepository = receivedTransactionRepository ??
+                                         throw new ArgumentNullException(nameof(receivedTransactionRepository));
+        _consolidationRepository =
+            consolidationRepository ?? throw new ArgumentNullException(nameof(consolidationRepository));
+        _transactionalPublisher =
+            transactionalPublisher ?? throw new ArgumentNullException(nameof(transactionalPublisher));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -56,16 +59,17 @@ public sealed class ProcessConsolidationBatchCommandHandler :
             }
 
             var groupedByConsolidationKey = GroupTransactionsByConsolidationKey(receivedTransactions);
-            
-            var consolidationsResult = await GetExistingConsolidationsAsync(groupedByConsolidationKey, request, cancellationToken);
+
+            var consolidationsResult =
+                await GetExistingConsolidationsAsync(groupedByConsolidationKey, request, cancellationToken);
             if (consolidationsResult.IsFailure)
                 return consolidationsResult.Error;
 
             var existingConsolidations = consolidationsResult.Value;
-            
+
             var updatedConsolidations = ComputeUpdatedConsolidations(groupedByConsolidationKey, existingConsolidations);
             var processedDates = updatedConsolidations.Select(c => c.Date).Distinct().ToList();
-            
+
             return await PersistConsolidationsAsync(request, updatedConsolidations, processedDates, cancellationToken);
         }
         catch (Exception ex)
@@ -74,19 +78,21 @@ public sealed class ProcessConsolidationBatchCommandHandler :
             return ProcessConsolidationBatchErrors.UnexpectedError(request.TracerId, ex.Message);
         }
     }
-    
+
     private async Task<Result<IReadOnlyCollection<ReceivedTransaction>, Response>> GetReceivedTransactionsByBatchAsync(
         ProcessConsolidationBatchCommand request,
         CancellationToken cancellationToken)
     {
         try
         {
-            var transactions = await _receivedTransactionRepository.GetByBatchIdAsync(request.BatchId, cancellationToken);
+            var transactions =
+                await _receivedTransactionRepository.GetByBatchIdAsync(request.BatchId, cancellationToken);
             return Result.Success<IReadOnlyCollection<ReceivedTransaction>, Response>(transactions);
         }
         catch (Exception e)
         {
-            ProcessConsolidationBatchLog.FailedToGetReceivedTransactions(_logger, e, request.TracerId, request.BatchId, e.Message);
+            ProcessConsolidationBatchLog.FailedToGetReceivedTransactions(_logger, e, request.TracerId, request.BatchId,
+                e.Message);
             return Result.Failure<IReadOnlyCollection<ReceivedTransaction>, Response>(
                 ProcessConsolidationBatchErrors.DatabaseError(request.TracerId, e.Message));
         }
@@ -109,7 +115,8 @@ public sealed class ProcessConsolidationBatchCommandHandler :
         {
             var keys = groupedTransactions.Keys.AsEnumerable();
 
-            var existingConsolidations = await _consolidationRepository.FindDailyConsolidationsByKeysAsync(keys, cancellationToken);
+            var existingConsolidations =
+                await _consolidationRepository.FindDailyConsolidationsByKeysAsync(keys, cancellationToken);
             var consolidations = existingConsolidations
                 .ToDictionary(c => new ConsolidationKey(c.UserId, c.Date));
 
@@ -133,9 +140,9 @@ public sealed class ProcessConsolidationBatchCommandHandler :
         {
             var consolidation = existingConsolidations.TryGetValue(key, out var existingConsolidation)
                 ? existingConsolidation
-                : new DailyBalances 
-                { 
-                    UserId = key.UserId, 
+                : new DailyBalances
+                {
+                    UserId = key.UserId,
                     Date = key.Date,
                     ConsolidationKey = key.Value
                 };
@@ -147,7 +154,7 @@ public sealed class ProcessConsolidationBatchCommandHandler :
             var totalDebits = transactions
                 .Where(t => t.Type == TransactionType.Debit)
                 .Sum(t => t.Amount);
-            
+
             consolidation.ApplyBatch(totalCredits, totalDebits, transactions.Count);
             updated.Add(consolidation);
         }
@@ -168,7 +175,6 @@ public sealed class ProcessConsolidationBatchCommandHandler :
                 _transactionalPublisher.Session,
                 cancellationToken);
 
-            // Extract unique consolidation keys for cache invalidation
             var consolidationKeys = consolidations
                 .Select(c => c.ConsolidationKey)
                 .Distinct()
@@ -183,7 +189,8 @@ public sealed class ProcessConsolidationBatchCommandHandler :
 
             await _transactionalPublisher.PublishAsync(completionEvent, cancellationToken);
 
-            ProcessConsolidationBatchLog.BatchProcessed(_logger, request.TracerId, request.BatchId, processedDates.Count);
+            ProcessConsolidationBatchLog.BatchProcessed(_logger, request.TracerId, request.BatchId,
+                processedDates.Count);
 
             return Response.Ok();
         }
