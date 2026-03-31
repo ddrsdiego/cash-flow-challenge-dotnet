@@ -35,6 +35,8 @@ builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("authenticated", policy => policy.RequireAuthenticatedUser());
+    options.AddPolicy("require-admin", policy => policy.RequireRole("admin"));
+    options.AddPolicy("require-user", policy => policy.RequireRole("admin", "merchant"));
 });
 
 builder.Services.AddRateLimitingPolicies(builder.Configuration);

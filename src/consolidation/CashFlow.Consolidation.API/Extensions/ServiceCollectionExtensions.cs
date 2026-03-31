@@ -91,11 +91,16 @@ public static class ServiceCollectionExtensions
                 {
                     ValidateAudience = true,
                     ValidateIssuer = true,
-                    ValidateLifetime = true
+                    ValidateLifetime = true,
+                    RoleClaimType = "realm_roles"
                 };
             });
 
-        services.AddAuthorization();
+        services.AddAuthorization(options =>
+        {
+            options.AddPolicy("require-admin", policy => policy.RequireRole("admin"));
+            options.AddPolicy("require-user", policy => policy.RequireRole("admin", "merchant"));
+        });
 
         return services;
     }

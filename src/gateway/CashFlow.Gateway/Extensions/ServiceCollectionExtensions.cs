@@ -34,7 +34,8 @@ public static class ServiceCollectionExtensions
                 {
                     ValidateAudience = true,
                     ValidateIssuer = true,
-                    ValidateLifetime = true
+                    ValidateLifetime = true,
+                    RoleClaimType = "realm_roles"
                 };
             });
 

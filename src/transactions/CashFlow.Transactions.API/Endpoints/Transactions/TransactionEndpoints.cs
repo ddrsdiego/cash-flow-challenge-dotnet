@@ -24,27 +24,33 @@ public static class TransactionEndpoints
             .WithTags("Transactions");
 
         group.MapPost("/", CreateTransactionAsync)
+            .RequireAuthorization("require-user")
             .WithName("CreateTransaction")
             .WithSummary("Create a new financial transaction")
             .Produces<TransactionResponse>(202)
             .Produces<ErrorResponse>(400)
             .Produces<ErrorResponse>(401)
+            .Produces<ErrorResponse>(403)
             .Produces<ErrorResponse>(500);
 
         group.MapGet("/{id}", GetTransactionByIdAsync)
+            .RequireAuthorization("require-user")
             .WithName("GetTransactionById")
             .WithSummary("Get a transaction by ID")
             .Produces<TransactionResponse>()
             .Produces<ErrorResponse>(401)
+            .Produces<ErrorResponse>(403)
             .Produces<ErrorResponse>(404)
             .Produces<ErrorResponse>(500);
 
         group.MapGet("/", ListTransactionsAsync)
+            .RequireAuthorization("require-user")
             .WithName("ListTransactions")
             .WithSummary("List transactions with pagination")
             .Produces<TransactionResponse>()
             .Produces<ErrorResponse>(400)
             .Produces<ErrorResponse>(401)
+            .Produces<ErrorResponse>(403)
             .Produces<ErrorResponse>(500);
     }
 
