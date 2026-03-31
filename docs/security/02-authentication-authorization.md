@@ -125,11 +125,11 @@ Keycloak → 200 OK
   "azp": "cashflow-api",
   "session_state": "session-uuid",
   "realm_access": {
-    "roles": ["transactions:read", "transactions:write", "consolidation:read"]
+    "roles": ["admin"]
   },
   "resource_access": {
     "cashflow-api": {
-      "roles": ["user"]
+      "roles": ["admin"]
     }
   },
   "preferred_username": "comerciante@exemplo.com",
@@ -137,6 +137,10 @@ Keycloak → 200 OK
   "name": "João Comerciante"
 }
 ```
+
+**Papéis Disponíveis (por ADR-009):**
+- `admin` — Acesso completo (criar/ler transações, ler consolidado)
+- `merchant` (ou `user`) — Acesso de leitura (ler transações, ler consolidado)
 
 **Signature:** RS256 — assinado com chave privada do Keycloak; validado com chave pública.
 
@@ -234,73 +238,99 @@ Configuração recomendada:
 
 ---
 
-## 4. RBAC — Role-Based Access Control
+## 4. RBAC — Role-Based Access Control (MVP)
 
-### 4.1 Modelo de Roles
+Per [ADR-009](../decisions/ADR-009-rbac-scope-mvp.md), o MVP implementa RBAC com **2 papéis básicos** gerenciados como Keycloak Groups.
+
+### 4.1 Modelo de Papéis (MVP)
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    ROLES DO SISTEMA                     │
+│                  PAPÉIS DO MVP                          │
 ├─────────────────────────────────────────────────────────┤
 │                                                         │
-│  transactions:read   → Listar e consultar transações    │
-│  transactions:write  → Criar novas transações           │
-│  consolidation:read  → Consultar saldo consolidado      │
-│  admin               → Acesso completo + observabilidade│
+│  admin    → Criar/ler lançamentos, ler consolidado      │
+│            (operações administrativas)                  │
+│                                                         │
+│  user     → Ler lançamentos, ler consolidado            │
+│            (acesso de consulta apenas)                  │
 │                                                         │
 └─────────────────────────────────────────────────────────┘
 ```
 
-### 4.2 Mapeamento de Roles por Endpoint
+**Implementação:**
+- Papéis como Keycloak Groups: `/admin`, `/user`
+- Propagados no JWT via claim `realm_access.roles`
+- Cada usuário pertence a **exatamente um** grupo
 
-| Endpoint | Método | Role Necessária | Status sem Role |
-|----------|--------|-----------------|-----------------|
-| `/api/v1/transactions` | POST | `transactions:write` | 403 Forbidden |
-| `/api/v1/transactions` | GET | `transactions:read` | 403 Forbidden |
-| `/api/v1/transactions/{id}` | GET | `transactions:read` | 403 Forbidden |
-| `/api/v1/consolidation/daily` | GET | `consolidation:read` | 403 Forbidden |
-| `/api/v1/consolidation/daily/{date}` | GET | `consolidation:read` | 403 Forbidden |
-| `/health` | GET | Nenhuma (público) | — |
+### 4.2 Mapeamento de Papéis por Endpoint
 
-### 4.3 Perfis de Usuário e Roles Associadas
+| Endpoint | Método | Papel Necessário | Status sem Papel |
+|----------|--------|------------------|------------------|
+| `/api/v1/transactions` | POST | `admin` | 403 Forbidden |
+| `/api/v1/transactions` | GET | `admin` ou `user` | 403 Forbidden |
+| `/api/v1/transactions/{id}` | GET | `admin` ou `user` | 403 Forbidden |
+| `/consolidation/{date}` | GET | `admin` ou `user` | 403 Forbidden |
+| `/health` | GET | Nenhum (público) | — |
 
-| Perfil | Roles | Justificativa |
+### 4.3 Perfis de Usuário e Papéis Associados
+
+| Perfil | Papel | Justificativa |
 |--------|-------|---------------|
-| **Comerciante** | `transactions:read`, `transactions:write`, `consolidation:read` | Acesso completo às funcionalidades do sistema |
-| **Gerente Financeiro** | `transactions:read`, `consolidation:read` | Acesso de leitura (não pode criar lançamentos) |
-| **Admin / DevOps** | Todos + acesso a dashboards de observabilidade | Operação e manutenção do sistema |
-| **Sistema (serviço a serviço)** | Não se aplica | Comunicação via RabbitMQ, sem JWT |
+| **Comerciante / Operador** | `user` | Acesso de leitura (consulta transações e saldo) |
+| **Admin / Proprietário** | `admin` | Criar transações + ler (acesso completo) |
+| **Serviço a Serviço** | N/A | Comunicação via RabbitMQ, sem JWT |
 
-### 4.4 Verificação de Authorization no Gateway
+### 4.4 Fluxo de Verificação de Authorization no Gateway
 
 ```
-Fluxo de decisão de autorização:
+Decisão de autorização:
 
 1. Token JWT válido? (ver seção 2.3)
-   → Não: 401 Unauthorized (não autenticado)
+   → Não: 401 Unauthorized
    → Sim: próximo
 
-2. Endpoint requer role específica?
-   → POST /transactions → role: transactions:write
-   → GET  /transactions → role: transactions:read
-   → GET  /consolidation → role: consolidation:read
+2. Extrair claim realm_access.roles[] do token
+   Exemplo: ["admin"]
 
-3. Token contém a role necessária?
-   → Verificar realm_access.roles[]
+3. Endpoint requer papel específico?
+   → POST /api/v1/transactions requer papel "admin"
+   → GET  /api/v1/transactions requer papel "admin" ou "user"
+   → GET  /consolidation/{date} requer papel "admin" ou "user"
+
+4. Token contém papel necessário?
    → Não: 403 Forbidden (autenticado mas sem permissão)
-   → Sim: encaminhar request ao serviço downstream
+   → Sim: injetar X-User-Id (claim sub) no request
+          encaminhar para serviço downstream
 
-4. Injetar X-User-Id (claim sub) no request
-5. Encaminhar para serviço downstream
+Resultado: Verifi cação centralizada, serviços downstream confiam em X-User-Id
 ```
 
-### 4.5 Por que RBAC e não ABAC?
+### 4.5 Phase 2: Evolução para Papéis Adicionais
+
+Se novos requisitos de segurança surgirem:
+
+```
+Exemplo: adicionar papel "auditor" (leitura de logs, sem transações)
+
+1. Novo papel em Keycloak Group: /auditor
+2. Novo endpoint: GET /api/v1/logs (requer papel "auditor")
+3. Código MVP permanece inalterado:
+   - POST /api/v1/transactions continua exigindo "admin"
+   - GET /consolidation/{date} continua aceitando "admin" ou "user"
+   - "auditor" não pode acessar endpoints de transação
+
+Padrão: adicionar, não modificar — permite escalação sem quebra de compatibilidade
+```
+
+### 4.6 Por que RBAC e não ABAC?
 
 **RBAC (Role-Based Access Control)** foi escolhido porque:
 - ✅ Simples de implementar e auditar
-- ✅ Suportado nativamente pelo Keycloak
-- ✅ Suficiente para o contexto single-tenant do MVP
-- ✅ Escalável para novos perfis sem reescrita
+- ✅ Suportado nativamente pelo Keycloak (Groups)
+- ✅ Suficiente para o escopo MVP (2 papéis cobrem 80% dos casos)
+- ✅ Escalável para novos papéis sem reescrita (Phase 2)
+- ✅ Decisão documentada em ADR-009
 
 **ABAC (Attribute-Based Access Control)** seria considerado se:
 - Multi-tenancy com isolamento por `merchantId`

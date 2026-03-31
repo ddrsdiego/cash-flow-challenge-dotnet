@@ -97,17 +97,17 @@ O requisito define:
 
 Com MongoDB como única fonte de verdade, cada consulta faria uma query de leitura + aggregation, o que limita escalabilidade e aumenta latência.
 
-### Solução
-Usar Redis como cache intermediário com TTL curto:
+### Solução Adotada (MVP)
+Usar **IMemoryCache (.NET)** como cache in-process com TTL curto:
 
 ```
-GET /consolidation/daily?date=2024-03-15
+GET /consolidation/{date}
 
-1. Busca Redis (key: consolidation:2024-03-15)
-   ├── HIT → retorna (< 50ms) ✅
+1. Busca IMemoryCache (key: consolidation:{date})
+   ├── HIT → retorna (< 10ms) ✅
    └── MISS:
        a. Busca MongoDB
-       b. Armazena em Redis (TTL 5min)
+       b. Armazena em IMemoryCache (TTL 5min)
        c. Retorna (200-500ms)
 ```
 
@@ -116,41 +116,66 @@ GET /consolidation/daily?date=2024-03-15
 Requisição de leitura
         │
         ▼
-   ┌─────────┐
-   │  Redis  │ ──── HIT (< 50ms) ──────────────────► Resposta
-   └─────────┘
+   ┌──────────────────┐
+   │ IMemoryCache     │ ──── HIT (< 10ms) ──────────────────► Resposta
+   │ (in-process)     │
+   └──────────────────┘
         │
        MISS
         │
         ▼
    ┌──────────┐
-   │ MongoDB  │ ──── Query + Store no Redis ──────► Resposta (200-500ms)
+   │ MongoDB  │ ──── Query + Store em IMemoryCache ──────► Resposta (200-500ms)
    └──────────┘
 ```
 
 ### Configuração
 ```
-TTL: 5 minutos (Redis__DefaultExpirationMinutes)
+TTL: 5 minutos
 Chave: consolidation:{YYYY-MM-DD}
-Política de evição: allkeys-lru (se memória cheia)
-Memória máxima: 128MB
+Escopo: Per-instance (não compartilhado entre replicas)
+SizeLimit: Configurável em MemoryCacheOptions
 ```
 
 ### Quando o Cache é Invalidado
 - **Automaticamente:** Após 5 minutos (TTL)
-- **Manualmente:** Consolidation Worker deleta a chave após recalcular saldo
+- **Manualmente:** Consolidation Worker publica `DailyConsolidationUpdatedEvent` → cache subscriber invalida chave
 
-### Trade-offs
+### Trade-offs (Aceitos para MVP)
 
 | Prós | Contras |
 |------|---------|
-| Latência < 50ms no happy path | Dados podem estar defasados até 5min |
-| Suporta 50+ req/s sem sobrecarregar MongoDB | Consistência eventual (não imediata) |
-| Redis resiliente (126MB para consolidados diários) | Necessidade de invalidação explícita |
+| Latência < 10ms no happy path (< 50ms SLA) | Não compartilhado entre replicas (lag até 5min natural) |
+| Zero dependências externas — deploy imediato | Cache perdido ao reiniciar container (TTL refaz naturalmente) |
+| Suporta 50+ req/s em single-instance | Memory usage em RAM da aplicação (requer SizeLimit) |
+| IMemoryCache built-in .NET | Phase 2: necessário Redis Cluster para múltiplas replicas |
 
-### Alternativas Descartadas
-- **In-memory cache (.NET IMemoryCache):** Não compartilhado entre múltiplas instâncias (não escala horizontalmente)
-- **Sem cache:** Limita throughput e não atende o requisito de 50 req/s com p95 ≤ 500ms
+### Alternativas Avaliadas
+
+#### Redis desde o MVP
+- ✅ Imediatamente compartilhado entre replicas
+- ❌ Complexidade MVP (Redis container + configuração)
+- ❌ Overkill para escopo MVP single-instance
+
+#### MongoDB com Queries Otimizadas
+- ✅ Sem layer de cache adicional
+- ❌ Latência 50-200ms (não atende SLA < 50ms)
+
+#### Sem Cache
+- ✅ Simplicidade máxima
+- ❌ Latência 100-200ms (viola SLA crítico)
+
+### Phase 2 Migration Path
+
+**Trigger:** Quando arquitetura > 2 replicas em produção
+
+1. Implementar `RedisConsolidationCache : IConsolidationCache`
+2. Interface abstrata `IConsolidationCache` já prepara transição
+3. Feature flag para gradual rollout (10% → 50% → 100%)
+4. Monitor: latency, hit/miss ratio, memory usage
+5. Deprecate MemoryConsolidationCache
+
+Interface permanece invariante — apenas implementação muda. Ver [ADR-008](../decisions/ADR-008-cache-strategy-imemorycache.md) para justificativas técnicas.
 
 ---
 

@@ -29,7 +29,7 @@ O **CashFlow System** é um sistema de controle de fluxo de caixa que permite a 
 
 **Pré-condições:**
 - Comerciante autenticado
-- Comerciante possui permissão de escrita (role: `transactions:write`)
+- Comerciante possui papel `admin` (per ADR-009)
 
 **Fluxo Principal:**
 1. Comerciante acessa a API de Transações: `POST /api/transactions` (com JWT no header Authorization)
@@ -77,7 +77,7 @@ O **CashFlow System** é um sistema de controle de fluxo de caixa que permite a 
 
 **Pré-condições:**
 - Comerciante autenticado
-- Comerciante possui permissão de escrita (role: `transactions:write`)
+- Comerciante possui papel `admin` (per ADR-009)
 
 **Fluxo Principal:**
 1. Comerciante acessa a API de Transações: `POST /api/transactions` (com JWT no header Authorization)
@@ -108,17 +108,18 @@ O **CashFlow System** é um sistema de controle de fluxo de caixa que permite a 
 
 **Pré-condições:**
 - Comerciante autenticado
-- Comerciante possui permissão de leitura (role: `consolidation:read`)
+- Comerciante possui papel `admin` ou `user` (per ADR-009)
 
 **Fluxo Principal:**
-1. Comerciante acessa a API de Consolidação: `GET /api/consolidation/daily?date=2024-03-15`
-2. Sistema recebe a data solicitada
-3. Sistema busca o consolidado em **cache (Redis)** primeiro
-4. Se HIT em cache: retorna resultado imediatamente (< 50ms)
-5. Se MISS em cache:
-   - Busca em `consolidation_db.daily_consolidation`
+1. Comerciante acessa a API de Consolidação via Gateway: `GET /api/v1/consolidation/{date}` (ex: `/api/v1/consolidation/2024-03-15`)
+2. Gateway roteia para Consolidation API em `/consolidation/{date}`
+3. Sistema recebe a data solicitada
+4. Sistema busca o consolidado em **cache IMemoryCache** primeiro
+5. Se HIT em cache: retorna resultado imediatamente (< 10ms)
+6. Se MISS em cache:
+   - Busca em `consolidation_db.daily_balances`
    - Calcula agregações se necessário: `sum(credits) - sum(debits) = balance`
-   - Armazena em cache por 5 minutos
+   - Armazena em IMemoryCache por 5 minutos (TTL)
    - Retorna resultado
 6. Sistema retorna `200 OK` com:
    ```json
@@ -300,7 +301,7 @@ O **CashFlow System** é um sistema de controle de fluxo de caixa que permite a 
            v
 ┌──────────────────────────┐
 │  Consolidation API       │
-│  • Busca em cache        │ ← Redis (5min TTL)
+│  • Busca em cache        │ ← IMemoryCache (5min TTL, per-instance)
 │    (se hit: retorna)     │
 │  • Se miss: busca DB     │ ← MongoDB
 │  • Armazena em cache     │

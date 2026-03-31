@@ -141,7 +141,7 @@ Cliente → Bearer Token → Gateway (valida JWT)
 | Padrão | Onde | Benefício |
 |--------|------|-----------|
 | **MassTransit + MongoDB Outbox** | Transactions API | Atomicidade entre persistência e mensageria |
-| **Cache-First (Redis)** | Consolidation API | Latência < 50ms, suporte a 50+ req/s |
+| **Cache-First (IMemoryCache)** | Consolidation API | Latência < 10ms (HIT), suporte a 50+ req/s em single-instance |
 | **Event-Driven** | Transactions → Worker | Isolamento total de falhas |
 | **CQRS Light** | Consolidation Service | Separação de responsabilidades read/write |
 | **Database-per-Service** | MongoDB | Isolamento de dados entre serviços |
@@ -342,7 +342,34 @@ dotnet test CashFlow.sln
 | **Fase 4.4** | Consolidation API (JWT Auth + health endpoint) | ✅ Completo |
 | **Fase 4.5** | API Gateway (YARP + JWT Auth + Rate Limiting + OTel) | ✅ Completo |
 | **Fase 4.6** | Consolidation Worker (MassTransit Consumer + Batch Processing) | ✅ Completo |
-| **Fase 5** | Testes Unitários e de Integração | 🔄 Planejado |
+| **Fase 5** | Testes Unitários (50 testes: Transactions 18 + Consolidation 20 + Worker 12) | ✅ Completo (40+ testes) |
+
+---
+
+## ✅ Requisito × Evidência — Validação de Escopo
+
+| Requisito | Tipo | Evidência de Implementação | Arquivo |
+|-----------|------|---------------------------|---------|
+| **RNF-01: Isolamento de Falhas** | Arquitetura | Comunicação exclusivamente assíncrona via RabbitMQ; Transactions API retorna 201 sem depender de Consolidation | `docs/architecture/06-architectural-patterns.md` (Seção 3) |
+| **RNF-02: Throughput 50 req/s** | Arquitetura | Cache-First com IMemoryCache (< 10ms HIT), MongoDB para MISS, Rate limiting 100 req/s no Gateway | `docs/architecture/06-architectural-patterns.md` (Seção 2) |
+| **RNF-03: Cache em Múltiplas Replicas** | Arquitetura | Padrão Fanout per-Instance com RabbitMQ; cada pod recebe invalidação simultaneamente | `docs/architecture/04-component-consolidation.md` |
+| **RN-01: Validação de Valor** | Negócio | FluentValidation em `CreateTransactionRequest`: `amount > 0` | `src/CashFlow.Transactions.API` |
+| **RN-02: Cálculo de Saldo** | Negócio | Balance = Sum(Credits) - Sum(Debits); decimal precision no MongoDB | `src/CashFlow.SharedKernel/Domain/Entities` |
+| **RN-03: Imutabilidade Transações Passadas** | Negócio | Regra de negócio documentada; endpoints não implementam DELETE/PUT em dados históricos | `docs/requirements/01-functional-requirements.md` (RN-03) |
+| **RN-04: Consolidação Diária Única** | Negócio | MongoDB com UPSERT em `daily_balances`; índice único em `(date, userId)` | `src/CashFlow.Consolidation.Worker` |
+| **RN-05: Descrição Obrigatória** | Validação | FluentValidation: `!string.IsNullOrWhiteSpace(description) && description.Length <= 500` | `src/CashFlow.Transactions.API` |
+| **RN-06: Categoria Vinculada** | Validação | Enum `Category` com valores predefinidos; FluentValidation valida contra enum | `src/CashFlow.SharedKernel/Domain/Enums` |
+| **RN-07: Isolamento de Falhas (RabbitMQ)** | Arquitetura | Evento publicado após persistência; Worker processa asincronamente | `docs/architecture/06-architectural-patterns.md` (Seção 3) |
+| **RN-08: UserId por Extração JWT** | Segurança | API Gateway extrai `sub` do JWT e injeta header `X-User-Id`; Transactions API usa este header | `src/CashFlow.Gateway/Program.cs` |
+| **UC-01: Criar Débito** | Funcional | POST `/api/v1/transactions` com `type: "DEBIT"`; validação, persistência, evento publicado | `src/CashFlow.Transactions.API/Endpoints` |
+| **UC-02: Criar Crédito** | Funcional | POST `/api/v1/transactions` com `type: "CREDIT"`; idêntico ao UC-01 | `src/CashFlow.Transactions.API/Endpoints` |
+| **UC-03: Consultar Consolidado** | Funcional | GET `/api/v1/consolidation/{date}` via Gateway; cache-first com IMemoryCache | `src/CashFlow.Consolidation.API/Endpoints` |
+| **UC-04: Listar Transações** | Funcional | GET `/api/v1/transactions?startDate=...&endDate=...`; paginação, filtros | `src/CashFlow.Transactions.API/Endpoints` |
+| **Autenticação JWT** | Segurança | Keycloak emite tokens RS256; Gateway valida assinatura e claims | `src/CashFlow.Gateway/Extensions/ServiceCollectionExtensions.cs` |
+| **RBAC (2 papéis)** | Segurança | `admin` pode criar (POST /transactions); `user` pode ler (GET); políticas no Gateway | `src/CashFlow.Gateway/Program.cs` + ADR-009 |
+| **Rate Limiting** | Performance | YARP: 100 req/s por IP (global); Consolidation API: 50 req/s (dedicado) | `src/CashFlow.Gateway` + `src/CashFlow.Consolidation.API` |
+| **Observabilidade** | Operações | OpenTelemetry correlationId em todos os traces; Seq para logs estruturados; Jaeger para distributed tracing | `src/***/Extensions/ServiceCollectionExtensions.cs` |
+| **Testes Unitários** | QA | 50 testes `[Fact]`: Transactions 18 + Consolidation 20 + Worker 12; todos com `[Fact]` e naming idiomático | `tests/CashFlow.*.Tests` |
 
 ---
 

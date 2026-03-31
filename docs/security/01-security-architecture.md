@@ -106,7 +106,7 @@ A segurança não é um componente isolado — é uma propriedade transversal qu
 | C1 | Rede | TLS 1.3 obrigatório para comunicação externa | Reverse proxy / TLS termination | Certificado CA confiável em produção |
 | C2 | Gateway | Rate limiting global | YARP + ASP.NET Core Rate Limiter | 100 req/s por IP; 429 com `Retry-After` |
 | C3 | Gateway | Validação de JWT | Microsoft.AspNetCore.Authentication.JwtBearer | Verifica assinatura, emissor, audiência e expiração |
-| C4 | Gateway | Autenticação obrigatória | ASP.NET Core `RequireAuthorization()` | MVP: apenas `RequireAuthenticatedUser()` (sem RBAC granular); ver ADR-009 |
+| C4 | Gateway | RBAC com papéis básicos | ASP.NET Core `RequireAuthorization("require-admin/require-user")` | 2 papéis: `admin` (criar), `user` (ler); ver ADR-009 |
 | C5 | Gateway | Security headers | YARP middleware customizado | HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy |
 | C6 | Gateway | Propagação de identidade | Header `X-User-Id` injetado pelo Gateway | Extrai claim `sub` do JWT validado; ver ADR-003 |
 | C7 | Gateway | Audit logging | OpenTelemetry + Seq | Toda requisição logada com userId, IP, endpoint, status |
@@ -178,7 +178,7 @@ A arquitetura adota **Defense in Depth** com quatro camadas independentes:
 | **Repudiation** (negação de ação) | Usuário negar que criou lançamento | C7 (audit log com userId), C6 (userId extraído de JWT não forjável) | Baixo |
 | **Information Disclosure** (exposição de dados) | Leitura de transações de outros usuários | C3 (autenticação obrigatória), C4 (RBAC), C13-C20 (dados isolados) | Médio (MVP single-tenant) |
 | **Denial of Service** | Flood de requisições | C2 (rate limiting 100 req/s), C10 (50 req/s no consolidado) | Médio (single-node, sem CDN) |
-| **Elevation of Privilege** | Acessar endpoints sem permissão | C4 (autenticação obrigatória), C3 (JWT inválido = 401) | Médio (MVP sem RBAC granular) |
+| **Elevation of Privilege** | Acessar endpoints sem permissão | C4 (RBAC com 2 papéis: admin/user), C3 (JWT inválido = 401) | Baixo (RBAC implementado per ADR-009) |
 
 ### Riscos Residuais Documentados
 
