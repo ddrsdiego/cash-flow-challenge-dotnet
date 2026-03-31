@@ -106,7 +106,7 @@ A segurança não é um componente isolado — é uma propriedade transversal qu
 | C1 | Rede | TLS 1.3 obrigatório para comunicação externa | Reverse proxy / TLS termination | Certificado CA confiável em produção |
 | C2 | Gateway | Rate limiting global | YARP + ASP.NET Core Rate Limiter | 100 req/s por IP; 429 com `Retry-After` |
 | C3 | Gateway | Validação de JWT | Microsoft.AspNetCore.Authentication.JwtBearer | Verifica assinatura, emissor, audiência e expiração |
-| C4 | Gateway | Verificação de RBAC | ASP.NET Core Authorization Policies | Policies mapeadas para roles do Keycloak |
+| C4 | Gateway | Autenticação obrigatória | ASP.NET Core `RequireAuthorization()` | MVP: apenas `RequireAuthenticatedUser()` (sem RBAC granular); ver ADR-009 |
 | C5 | Gateway | Security headers | YARP middleware customizado | HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy |
 | C6 | Gateway | Propagação de identidade | Header `X-User-Id` injetado pelo Gateway | Extrai claim `sub` do JWT validado; ver ADR-003 |
 | C7 | Gateway | Audit logging | OpenTelemetry + Seq | Toda requisição logada com userId, IP, endpoint, status |
@@ -118,9 +118,9 @@ A segurança não é um componente isolado — é uma propriedade transversal qu
 | C13 | Dados | Autenticação MongoDB | MongoDB URI com user/password | Configurado via variável de ambiente; sem acesso anônimo |
 | C14 | Dados | Encryption at rest MongoDB | MongoDB Enterprise / FS encryption | Configurado em produção; desabilitado em dev por simplicidade |
 | C15 | Dados | Isolamento de rede MongoDB | Docker network `backend-net` | MongoDB não exposto externamente (sem port binding público) |
-| C16 | Dados | Autenticação Redis | `requirepass` | Senha configurada via variável de ambiente |
-| C17 | Dados | Isolamento de rede Redis | Docker network `backend-net` | Redis não exposto externamente |
-| C18 | Dados | Persistência Redis | AOF (appendonly yes) | Protege contra perda de cache em restart |
+| C16 | Dados | Cache in-process | IMemoryCache (.NET) | TTL 5min; per-instance (não compartilhado entre replicas); ver ADR-008 |
+| C17 | Dados | Isolamento de rede | Docker network `backend-net` | Consolidation API não exposta externamente |
+| C18 | Dados | Cache invalidation | Event-driven (DailyConsolidationUpdatedEvent) | Worker invalida cache após update |
 | C19 | Dados | Autenticação RabbitMQ | AMQP user/password | Usuário e senha configurados via variáveis de ambiente |
 | C20 | Dados | Isolamento de rede RabbitMQ | Docker network `backend-net` | Management UI exposta apenas em dev (porta 15672) |
 | C21 | Identity | Emissão de tokens JWT | Keycloak RS256 | Tokens assinados com chave privada; Gateway valida com chave pública |
@@ -178,13 +178,15 @@ A arquitetura adota **Defense in Depth** com quatro camadas independentes:
 | **Repudiation** (negação de ação) | Usuário negar que criou lançamento | C7 (audit log com userId), C6 (userId extraído de JWT não forjável) | Baixo |
 | **Information Disclosure** (exposição de dados) | Leitura de transações de outros usuários | C3 (autenticação obrigatória), C4 (RBAC), C13-C20 (dados isolados) | Médio (MVP single-tenant) |
 | **Denial of Service** | Flood de requisições | C2 (rate limiting 100 req/s), C10 (50 req/s no consolidado) | Médio (single-node, sem CDN) |
-| **Elevation of Privilege** | Acessar endpoints sem permissão | C4 (RBAC), C3 (JWT inválido = 401), C4 (role ausente = 403) | Baixo |
+| **Elevation of Privilege** | Acessar endpoints sem permissão | C4 (autenticação obrigatória), C3 (JWT inválido = 401) | Médio (MVP sem RBAC granular) |
 
 ### Riscos Residuais Documentados
 
 | Risco | Causa | Mitigação Futura |
 |-------|-------|-----------------|
 | **Information Disclosure (médio)** | MVP é single-tenant — sem isolamento de dados por usuário | Introduzir `merchantId` para isolamento multi-tenant em versão futura |
+| **Elevation of Privilege (médio)** | MVP sem RBAC granular — apenas autenticação obrigatória | Implementar RBAC roles (`transactions:read/write`, `consolidation:read`) em Phase 2; ver ADR-009 |
+| **Cache não compartilhado (médio)** | IMemoryCache é per-instance em MVP | Migrar para Redis em cluster em produção (Phase 2); ver ADR-008 |
 | **DoS no nível de infraestrutura** | RabbitMQ e MongoDB são single-node no MVP | Cluster de alta disponibilidade em produção; CDN para absolver pico |
 | **Secrets em arquivos `.env`** | `.env` no ambiente dev pode ser exposto | Em produção: AWS Secrets Manager / Azure Key Vault / HashiCorp Vault |
 | **Keycloak sem HA** | Single-node no MVP | Cluster Keycloak em produção para evitar SPOF de autenticação |
@@ -197,7 +199,8 @@ A arquitetura adota **Defense in Depth** com quatro camadas independentes:
 
 | Endpoint | Protocolo | Autenticação | Rate Limit |
 |----------|-----------|-------------|------------|
-| `GET/POST /api/v1/*` via API Gateway | HTTPS | JWT obrigatório | 100 req/s |
+| `GET/POST /api/v1/transactions*` via API Gateway | HTTPS | JWT obrigatório | 100 req/s global |
+| `GET /api/v1/consolidation/*` via API Gateway | HTTPS | JWT obrigatório | 100 req/s global |
 | `POST /auth/token` via Keycloak | HTTPS | username + password | Keycloak built-in |
 
 ### Exposto para Observabilidade (Acesso restrito)
@@ -212,10 +215,11 @@ A arquitetura adota **Defense in Depth** com quatro camadas independentes:
 ### Não Exposto (Isolado em backend-net)
 
 - Transactions API (porta 8081) — apenas via Gateway
+- Transactions.Worker (sem porta HTTP) — apenas consume mensagens
 - Consolidation API (porta 8082) — apenas via Gateway
-- MongoDB (porta 27017) — apenas entre serviços
-- Redis (porta 6379) — apenas entre serviços
-- RabbitMQ AMQP (porta 5672) — apenas entre serviços
+- Consolidation.Worker (sem porta HTTP) — apenas consume mensagens
+- MongoDB (porta 27017) — apenas entre serviços e workers
+- RabbitMQ AMQP (porta 5672) — apenas entre serviços e workers
 
 ---
 

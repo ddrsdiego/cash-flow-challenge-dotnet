@@ -4,10 +4,10 @@
 
 O **Consolidation Service** é composto por **dois containers** com responsabilidades distintas:
 
-- **Consolidation API** — Serviço de **leitura** (consulta de saldo diário consolidado). Usa padrão Cache-First com Redis.
-- **Consolidation Worker** — Serviço de **processamento assíncrono**. Consome eventos do RabbitMQ e recalcula saldo.
+- **Consolidation API** — Serviço de **leitura** (consulta de saldo diário consolidado). Usa padrão Cache-First com **IMemoryCache** (.NET in-process).
+- **Consolidation.Worker** — Serviço de **processamento assíncrono**. Consome eventos do RabbitMQ e recalcula saldo em batch.
 
-Os dois compartilham o mesmo banco de dados (`consolidation_db`) mas são deployados de forma independente, o que garante o requisito de isolamento de falhas.
+Os dois compartilham o mesmo banco de dados (`consolidation_db`) mas são deployados de forma independente, o que garante isolamento de falhas.
 
 ---
 
@@ -19,391 +19,410 @@ C4Component
 
     Container_Boundary(consapi, "Consolidation API (.NET 8)") {
 
-        Component(endpoints, "ConsolidationEndpoints", "Minimal API", "Define rotas HTTP:\n• GET /api/v1/consolidation/daily\n• GET /api/v1/consolidation/daily/{date}\nMapeia query params → request → response")
+        Component(endpoints, "ConsolidationEndpoints", "Minimal API", "Define rotas HTTP:\n• GET /api/v1/consolidation/daily?date=YYYY-MM-DD\n• GET /api/v1/consolidation/daily/{date}\nMapeia query params → query → response")
 
-        Component(service, "ConsolidationService", "Application Service", "Orquestra leitura com Cache-First:\n1. Busca em cache (Redis)\n2. Se HIT: retorna imediatamente\n3. Se MISS: busca no MongoDB\n4. Armazena em cache (TTL 5min)\n5. Retorna resultado")
+        Component(service, "ConsolidationService", "Application Service", "Orquestra leitura com Cache-First:\n1. Busca em IMemoryCache\n2. Se HIT: retorna imediatamente\n3. Se MISS: busca MongoDB + armazena em cache")
 
-        Component(domain, "DailyConsolidation", "Domain Aggregate", "Entidade de consolidação:\n• Date (DateOnly, unique)\n• TotalCredits (decimal)\n• TotalDebits (decimal)\n• Balance (calculado)\n• TransactionCount (int)\n• LastUpdated (DateTime)")
+        Component(domain, "DailyConsolidation", "Domain Aggregate", "Entidade de consolidação:\n• Date (unique)\n• TotalCredits, TotalDebits\n• Balance (calculado)\n• TransactionCount, LastUpdated")
 
-        Component(icache, "IConsolidationCache", "Interface", "Abstração de cache:\n• GetAsync(date)\n• SetAsync(date, data, ttl)\n• InvalidateAsync(date)")
+        Component(icache, "IConsolidationCache", "Interface", "Abstração de cache:\n• GetAsync(key)\n• SetAsync(key, value, ttl)\n• InvalidateAsync(key)")
 
-        Component(rediscache, "RedisConsolidationCache", "Infrastructure", "Implementação Redis:\n• Chave: consolidation:{date}\n• TTL: 5 minutos\n• Serialização: JSON\n• Retry em falha de conexão")
+        Component(memcache, "MemoryConsolidationCache", "Infrastructure", "Implementação IMemoryCache:\n• Chave: consol:{date}\n• TTL: 5 minutos\n• Serialização: JSON via System.Text.Json")
 
-        Component(irepo, "IConsolidationRepository", "Interface", "Abstração de persistência:\n• GetByDateAsync(date)\n• UpsertAsync(consolidation)")
+        Component(irepo, "IConsolidationRepository", "Interface", "Abstração de persistência:\n• GetByDateAsync(date)\n• UpsertAsync(consolidation, session)")
 
-        Component(mongorepo, "MongoConsolidationRepository", "Infrastructure", "Implementação MongoDB:\n• Collection: daily_consolidation\n• Índice único em date\n• Upsert (não insert)\n• Decimal128 para valores")
+        Component(mongorepo, "MongoConsolidationRepository", "Infrastructure", "Implementação MongoDB:\n• Collection: daily_consolidations\n• Índice único em date\n• Upsert (não insert)\n• Decimal128 para valores")
+
+        Component(consumer, "DailyConsolidationUpdatedConsumer", "MassTransit Consumer", "Consome DailyConsolidationUpdatedEvent:\n• Invalida cache do IMemoryCache\n• Fire-and-forget (não crítico)")
     }
 
-    ContainerDb(redis, "Redis 7.2", "Cache", "Chave: consolidation:{date}\nTTL: 5 minutos")
+    ContainerDb(memcache_ext, "IMemoryCache", "Cache (In-Process)", "TTL 5 min\nChave: consol:{date}")
 
-    ContainerDb(mongodb, "MongoDB", "consolidation_db", "Collection: daily_consolidation")
+    ContainerDb(mongodb, "MongoDB", "consolidation_db", "Collection:\n• daily_consolidations\nÍndice: date (unique)")
+
+    Container_Ext(rabbitmq, "RabbitMQ", "Message Broker", "Topic: cashflow.consolidation\nEvent: DailyConsolidationUpdated")
 
     Rel(endpoints, service, "Delega consulta para")
     Rel(service, domain, "Mapeia para")
     Rel(service, icache, "Busca/armazena via")
     Rel(service, irepo, "Lê dados via")
-    Rel(icache, rediscache, "Implementado por")
+    Rel(icache, memcache, "Implementado por")
     Rel(irepo, mongorepo, "Implementado por")
-    Rel(rediscache, redis, "GET/SET/DEL", "Redis protocol")
+    Rel(memcache, memcache_ext, "GET/SET/DEL", "In-process")
     Rel(mongorepo, mongodb, "Find/Upsert", "MongoDB driver")
+    Rel(consumer, icache, "Invalida via")
+    Rel(rabbitmq, consumer, "Publica para", "AMQP")
 ```
 
 ---
 
-## Diagrama — Consolidation Worker
+## Diagrama — Consolidation.Worker
 
 ```mermaid
 C4Component
-    title Consolidation Worker — Component Diagram (C4 Level 3)
+    title Consolidation.Worker — Component Diagram (C4 Level 3)
 
-    Container_Boundary(worker, "Consolidation Worker (.NET 8 BackgroundService)") {
+    Container_Boundary(worker, "Consolidation.Worker (.NET 8 BackgroundService)") {
 
-        Component(consumer, "TransactionCreatedConsumer", "RabbitMQ Consumer", "Consome eventos da fila:\n• Queue: consolidation.input\n• At-least-once delivery\n• Chama handler para cada evento\n• ACK após processamento\n• NACK + DLQ após 3 falhas")
+        Component(txcreated_consumer, "TransactionCreatedConsumer", "MassTransit Consumer", "Consome TransactionCreatedEvent:\n• Queue: consolidation.input\n• Chama IngestTransactionsBatch\n• Publica ConsolidationBatchReceived")
 
-        Component(idempotency, "IdempotencyChecker", "Application Service", "Evita processamento duplicado:\n• Busca idempotencyKey no MongoDB\n• Se já processado: ignora silenciosamente\n• Se novo: prossegue + registra")
+        Component(ingest_cmd, "IngestTransactionsBatchCommand", "MediatR Command", "Acumula transações em lote\nPrepara para consolidação")
 
-        Component(calculator, "ConsolidationCalculator", "Domain Service", "Aplica delta incremental ao consolidado:\n• Recebe: type + amount do evento\n• se CREDIT → totalCredits += amount\n• se DEBIT  → totalDebits  += amount\n• Recalcula: balance = totalCredits - totalDebits\n• Retorna DailyConsolidation atualizado")
+        Component(ingest_handler, "IngestTransactionsBatchHandler", "MediatR Handler", "Busca batch de transações\nValida + transforma\nPublica ConsolidationBatchReceivedEvent")
+
+        Component(batch_consumer, "ConsolidationBatchReceivedConsumer", "MassTransit Consumer", "Consome ConsolidationBatchReceivedEvent:\n• Chama ProcessConsolidationBatch\n• Persiste saldo consolidado")
+
+        Component(process_cmd, "ProcessConsolidationBatchCommand", "MediatR Command", "Intenção: processar consolidação")
+
+        Component(process_handler, "ProcessConsolidationBatchHandler", "MediatR Handler", "FASE 1: Valida entrada\nFASE 2: Busca dados históricos\nFASE 3: Calcula + persiste")
+
+        Component(calculator, "ConsolidationCalculator", "Domain Service", "Aplica lógica de cálculo:\nbalance = credits - debits\nTransactionCount += 1")
+
+        Component(idempotency_svc, "IdempotencyService", "Application Service", "Evita reprocessamento:\n• Busca idempotencyKey\n• Se processado: ignora\n• Se novo: registra")
 
         Component(irepo, "IConsolidationRepository", "Interface", "Abstração de persistência:\n• UpsertAsync(consolidation, session)\n• GetByDateAsync(date)")
 
-        Component(mongorepo, "MongoConsolidationRepository", "Infrastructure", "Implementação MongoDB:\n• Collection: daily_consolidation\n• UPSERT (nunca duplica por data)\n• Usa IClientSessionHandle")
+        Component(mongorepo, "MongoConsolidationRepository", "Infrastructure", "Implementação MongoDB:\n• Collection: daily_consolidations\n• UPSERT (nunca duplica por date)\n• Session para transação")
 
-        Component(iidempotencyrepo, "IIdempotencyRepository", "Interface", "Abstração de idempotência:\n• ExistsAsync(key)\n• RegisterAsync(key, session)")
+        Component(idemp_repo, "IIdempotencyRepository", "Interface", "Abstração de idempotência:\n• ExistsAsync(key)\n• RegisterAsync(key, session)")
 
-        Component(mongoidemp, "MongoIdempotencyRepository", "Infrastructure", "Registro de eventos processados:\n• Collection: processed_events\n• TTL index: expira em 7 dias\n• Índice único em idempotencyKey")
+        Component(idemp_impl, "MongoIdempotencyRepository", "Infrastructure", "Registro de eventos processados:\n• Collection: processed_events\n• TTL index: 7 dias")
 
-        Component(icacheinv, "ICacheInvalidator", "Interface", "Abstração de invalidação:\n• InvalidateAsync(date)")
+        Component(cache_inv, "ICacheInvalidator", "Interface", "Abstração de invalidação:\n• InvalidateAsync(date)")
 
-        Component(redissinv, "RedisCacheInvalidator", "Infrastructure", "Invalida cache do Redis:\n• DEL consolidation:{date}\n• Fire-and-forget (não crítico)\n• Falha silenciosa (cache fica stale)")
+        Component(cache_inv_impl, "MemoryCacheInvalidator", "Infrastructure", "Invalida IMemoryCache:\n• DELETE key: consol:{date}\n• Fire-and-forget")
+
+        Component(pub_event, "EventPublisher", "Infrastructure", "Publica DailyConsolidationUpdatedEvent\nPara Consolidation API invalidar cache")
     }
 
-    ContainerDb(rabbitmq, "RabbitMQ", "Message Broker", "Queue: consolidation.input\nDLQ: dlx.transaction.created")
+    ContainerDb(consmongo, "MongoDB", "consolidation_db", "Collections:\n• daily_consolidations\n• processed_events")
 
-    ContainerDb(consmongo, "MongoDB", "consolidation_db", "Collections:\n• daily_consolidation\n• processed_events")
+    Container_Ext(rabbitmq_w, "RabbitMQ", "Message Broker", "Topics:\n• cashflow.transactions\n• cashflow.consolidation")
 
-    ContainerDb(redis, "Redis", "Cache", "Chave: consolidation:{date}")
+    Rel(rabbitmq_w, txcreated_consumer, "TransactionCreatedEvent")
+    Rel(txcreated_consumer, ingest_cmd, "Dispatch")
+    Rel(ingest_cmd, ingest_handler, "Handled by")
+    Rel(ingest_handler, irepo, "Busca transações via")
+    Rel(ingest_handler, rabbitmq_w, "Publica ConsolidationBatchReceived")
 
-    Rel(consumer, rabbitmq, "Consome de", "AMQP")
-    Rel(consumer, idempotency, "Verifica duplicidade via")
-    Rel(consumer, irepo, "Lê consolidação atual via")
-    Rel(consumer, calculator, "Aplica delta via")
-    Rel(consumer, irepo, "Persiste resultado via")
-    Rel(consumer, icacheinv, "Invalida cache via")
-
-    Rel(idempotency, iidempotencyrepo, "Consulta/registra via")
-    Rel(iidempotencyrepo, mongoidemp, "Implementado por")
-    Rel(mongoidemp, consmongo, "Lê/escreve", "MongoDB driver")
+    Rel(rabbitmq_w, batch_consumer, "ConsolidationBatchReceivedEvent")
+    Rel(batch_consumer, process_cmd, "Dispatch")
+    Rel(process_cmd, process_handler, "Handled by")
+    Rel(process_handler, idempotency_svc, "Verifica via")
+    Rel(process_handler, irepo, "Lê + escreve via (transação)")
+    Rel(process_handler, calculator, "Aplica via")
+    Rel(idempotency_svc, idemp_repo, "Consulta/registra via")
+    Rel(process_handler, cache_inv, "Invalida via")
+    Rel(process_handler, pub_event, "Publica DailyConsolidationUpdated")
 
     Rel(irepo, mongorepo, "Implementado por")
-    Rel(mongorepo, consmongo, "Find/Upsert", "MongoDB driver")
-
-    Rel(icacheinv, redissinv, "Implementado por")
-    Rel(redissinv, redis, "DEL key", "Redis protocol")
+    Rel(idemp_repo, idemp_impl, "Implementado por")
+    Rel(cache_inv, cache_inv_impl, "Implementado por")
+    Rel(mongorepo, consmongo, "Lê/escreve", "MongoDB driver")
+    Rel(idemp_impl, consmongo, "Lê/escreve", "MongoDB driver")
+    Rel(pub_event, rabbitmq_w, "Publica para", "MassTransit")
 ```
 
 ---
 
-## Descrição dos Componentes
+## Consolidation API — Componentes
 
-### Consolidation API — Componentes
+### ConsolidationEndpoints
+**Responsabilidade:** Expor rotas HTTP de consulta
 
-#### ConsolidationEndpoints
-**Responsabilidade:** Expor rotas HTTP de consulta de saldo
-
-- Tecnologia: .NET 8 Minimal APIs
-- Aceita parâmetro `date` (query param ou path param)
-- Valida formato de data e que não é data futura
+- Valida `date` (query param): não pode ser futura
 - Delega ao `ConsolidationService`
-
-**Rotas:**
-```
-GET  /api/v1/consolidation/daily?date=YYYY-MM-DD    → saldo de data específica
-GET  /api/v1/consolidation/daily/{date}             → versão alternativa
-GET  /health                                         → health check
-GET  /metrics                                        → Prometheus metrics
-```
+- Retorna `DailyConsolidationResponse` ou erros (400, 404, 500)
 
 ---
 
-#### ConsolidationService
-**Responsabilidade:** Orquestrar consulta de saldo com Cache-First
+### ConsolidationService
+**Responsabilidade:** Orquestrar consulta com Cache-First
 
 ```
-FLUXO (Cache-First):
-  1. Buscar em Redis: GET consolidation:2024-03-15
-  2. HIT → retornar imediatamente (< 50ms)
+FLUXO:
+  1. IMemoryCache.GetAsync("consol:2024-03-15")
+  2. HIT → retorna DailyConsolidationResponse
   3. MISS:
-     a. Buscar em MongoDB: daily_consolidation WHERE date = '2024-03-15'
-     b. Encontrado → SET Redis com TTL 5min
-     c. Não encontrado → 404 Not Found
-  4. Retornar DailyConsolidationDto
+     a. IConsolidationRepository.GetByDateAsync("2024-03-15")
+     b. Encontrou → IMemoryCache.SetAsync(value, TTL 5min)
+     c. Não encontrou → 404 Not Found
+  4. Retorna response
 ```
 
 ---
 
-#### DailyConsolidation (Domain Aggregate)
-**Responsabilidade:** Representar o saldo consolidado de um dia
+### MemoryConsolidationCache
+**Responsabilidade:** Cache in-process via IMemoryCache
 
-| Campo | Tipo | Descrição |
-|-------|------|-----------|
-| `Date` | DateOnly | Data do consolidado (chave única) |
-| `TotalCredits` | decimal | Soma de todos os créditos do dia |
-| `TotalDebits` | decimal | Soma de todos os débitos do dia |
-| `Balance` | decimal | TotalCredits - TotalDebits |
-| `TransactionCount` | int | Quantidade de lançamentos processados |
-| `LastUpdated` | DateTime | Último recálculo |
+- **Tecnologia:** `Microsoft.Extensions.Caching.Memory`
+- **Chave:** `consol:{date}` (ex: `consol:2024-03-15`)
+- **TTL:** 5 minutos (configurável)
+- **Serialização:** JSON via `System.Text.Json`
+- **Comportamento:** Per-instance (não compartilhado entre replicas)
 
-**Invariante:** `Balance = TotalCredits - TotalDebits` (calculado, nunca modificado diretamente)
-
----
-
-#### RedisConsolidationCache
-**Responsabilidade:** Cache de alto desempenho para consultas de saldo
-
-- Chave: `consolidation:{date}` (ex: `consolidation:2024-03-15`)
-- TTL: 5 minutos (configurável via `Redis__DefaultExpirationMinutes`)
-- Serialização: `System.Text.Json`
-- Retry: 2 tentativas com delay 100ms antes de falhar silenciosamente
-- Fallback: Se Redis está indisponível, consulta vai direto ao MongoDB
+**Limitações vs Redis:**
+- ✅ < 50ms latência (in-process)
+- ❌ Não compartilhado entre múltiplas instâncias
+- ❌ Perdido ao reiniciar container
 
 ---
 
-### Consolidation Worker — Componentes
+### MongoConsolidationRepository
+**Responsabilidade:** Persistência de saldos consolidados
 
-#### TransactionCreatedConsumer
-**Responsabilidade:** Consumir e orquestrar processamento de eventos
+- **Collection:** `daily_consolidations`
+- **Operações:**
+  - `UpsertAsync(consolidation, session)` — insere ou atualiza por date
+  - `GetByDateAsync(date)` — retorna `Maybe<DailyConsolidation>`
+- **Índice:** unique em `date` (garante uma consolidação por dia)
 
-**Ciclo completo de um evento:**
+---
+
+### DailyConsolidationUpdatedConsumer
+**Responsabilidade:** Invalida cache quando consolidado é atualizado
+
+- Consome `DailyConsolidationUpdatedEvent` (publicado pelo Worker)
+- **Fire-and-forget:** não espera sucesso, falha silenciosa é aceitável
+- Invalida chave do cache: `consol:{date}`
+- Próxima leitura buscará dados frescos do MongoDB
+
+---
+
+## Consolidation.Worker — Componentes
+
+### TransactionCreatedConsumer
+**Responsabilidade:** Consumir `TransactionCreatedEvent` e iniciar acumulação
+
+- **Queue:** `consolidation.input` (RabbitMQ)
+- Extrai dados do evento
+- Dispatch `IngestTransactionsBatchCommand` via MediatR
+- **At-least-once delivery:** pode receber duplicatas
+
+---
+
+### IngestTransactionsBatchCommand
+**Responsabilidade:** Intenção de acumular transações em lote
+
+```csharp
+public record IngestTransactionsBatchCommand(
+    string TracerId,
+    string Date,
+    List<TransactionData> Transactions) : IRequest<Response>;
 ```
-1. DEQUEUE mensagem de consolidation.input
-   (evento carrega: type, amount, date, idempotencyKey)
-2. Verificar idempotência (já processou este evento?)
-   ├── SIM → ACK e ignorar
-   └── NÃO → prosseguir
-3. Ler DailyConsolidation atual de consolidation_db para a data do evento
-   (ou criar novo registro com zeros se for o primeiro lançamento do dia)
-4. Aplicar delta do evento:
-   ├── se type = CREDIT → totalCredits += amount
-   └── se type = DEBIT  → totalDebits  += amount
-   recalcular: balance = totalCredits - totalDebits
-               transactionCount += 1
-5. BEGIN MongoDB session
-   ├── UPSERT daily_consolidation
-   └── INSERT processed_events (idempotência)
-6. COMMIT session
-7. DEL cache Redis: consolidation:{date}
-8. ACK mensagem (sucesso)
 
-EM CASO DE FALHA:
-   - NACK com requeue=false
-   - Após 3 tentativas: mensagem vai para DLQ
-   - Alerta para operação manual
+---
+
+### IngestTransactionsBatchHandler
+**Responsabilidade:** Buscar transações e preparar para consolidação
+
+**FASE 1:** Validar entrada
+- Null checks, date válida
+
+**FASE 2:** Resolver dependências
+- Busca todas as transações da data em `transactions_db.transactions`
+- Filtra por `Type` (DEBIT vs CREDIT)
+- Prepara batch para cálculo
+
+**FASE 3:** Publicar evento
+- Publica `ConsolidationBatchReceivedEvent`
+- Encaminha para `ConsolidationBatchReceivedConsumer`
+
+---
+
+### ConsolidationBatchReceivedConsumer
+**Responsabilidade:** Consumir evento e processar consolidação
+
+- **Topic:** `cashflow.consolidation`
+- Dispatch `ProcessConsolidationBatchCommand` via MediatR
+- MassTransit garante **at-least-once delivery**
+
+---
+
+### ProcessConsolidationBatchCommand
+**Responsabilidade:** Intenção de processar consolidação
+
+```csharp
+public record ProcessConsolidationBatchCommand(
+    string TracerId,
+    DateTime Date,
+    List<TransactionData> Transactions) : IRequest<Response>;
 ```
 
 ---
 
-#### IdempotencyChecker
-**Responsabilidade:** Garantir que o mesmo evento não seja processado duas vezes
+### ProcessConsolidationBatchHandler
+**Responsabilidade:** Processar consolidação atomicamente
 
-- Verifica `idempotencyKey` (UUID gerado pelo Transactions Service)
-- Armazenado em `consolidation_db.processed_events`
-- TTL: 7 dias (via índice TTL no MongoDB)
-- **Cenário tratado:** RabbitMQ pode entregar a mesma mensagem mais de uma vez por falha de rede ou reinício do consumer
+**FASE 1 — Validar Inputs:**
+- Null checks, date válida
+
+**FASE 2 — Resolver Dependências:**
+- `IdempotencyService.CheckAsync(idempotencyKey)` → já processado?
+  - ✅ SIM → retorna sucesso (idempotência)
+  - ❌ NÃO → prossegue
+- `ConsolidationRepository.GetByDateAsync(date)` → consolidado atual
+  - Pode ser nulo (primeiro lançamento do dia)
+
+**FASE 3 — Persistir (Transação):**
+```
+BEGIN MongoDB Transaction
+  1. ApplyDelta: ConsolidationCalculator
+     └─ Aplica transações ao consolidado
+  2. UPSERT: ConsolidationRepository
+     └─ Salva saldo atualizado
+  3. REGISTER: IdempotencyRepository
+     └─ Registra que foi processado (TTL 7 dias)
+  4. PUBLISH: EventPublisher
+     └─ Publica DailyConsolidationUpdatedEvent
+COMMIT
+```
+
+Se qualquer etapa falhar → ROLLBACK completo.
 
 ---
 
-#### ConsolidationCalculator
-**Responsabilidade:** Aplicar delta incremental ao consolidado do dia
+### ConsolidationCalculator
+**Responsabilidade:** Aplicar delta de transações ao consolidado
 
-O Calculator **não lê de nenhum banco**. Recebe os dados do evento e o estado atual do consolidado, aplica a lógica de negócio e retorna o documento atualizado.
+```csharp
+public record ApplyDeltaResult(
+    decimal TotalCredits,
+    decimal TotalDebits,
+    decimal Balance,
+    int TransactionCount);
+
+var result = _calculator.ApplyDelta(
+    currentConsolidation,
+    creditsAmount: 500m,
+    debitsAmount: 100m);
+
+// Resultado:
+// TotalCredits = 800 (300 anterior + 500 novo)
+// TotalDebits = 150
+// Balance = 650
+// TransactionCount = 3
+```
 
 **Algoritmo:**
 ```
-ENTRADA:
-  evento   = { type: CREDIT|DEBIT, amount: decimal, date: DateOnly }
-  atual    = DailyConsolidation atual (ou novo com zeros)
+INPUT:
+  - consolidadoAtual (ou nulo se primeiro lançamento)
+  - transações do dia (list de debits + credits)
 
-APLICAR DELTA:
-  se type = CREDIT → atual.totalCredits += amount
-  se type = DEBIT  → atual.totalDebits  += amount
-  atual.balance          = atual.totalCredits - atual.totalDebits
-  atual.transactionCount += 1
-  atual.lastUpdated       = DateTime.UtcNow
+PROCESSAR:
+  - totalCredits = atual.totalCredits + sum(credits)
+  - totalDebits = atual.totalDebits + sum(debits)
+  - balance = totalCredits - totalDebits
+  - transactionCount = atual.count + list.count
 
-RETORNAR DailyConsolidation {
-  date, totalCredits, totalDebits, balance, transactionCount, lastUpdated
-}
+RETORNA:
+  - DailyConsolidation atualizado
 ```
 
-**Precisão:** Usa `decimal` (nunca `float`/`double`) para evitar erros de arredondamento financeiro.
-
-**Isolamento:** Este componente opera exclusivamente em `consolidation_db`. O evento `TransactionCreated` carrega todos os dados necessários (type + amount + date), conforme definido em ADR-002.
+**Precisão:** Usa `decimal` (nunca `float`) para exatidão financeira.
 
 ---
 
-#### RedisCacheInvalidator
-**Responsabilidade:** Invalidar cache após recálculo
+### IdempotencyService
+**Responsabilidade:** Evitar reprocessamento de eventos duplicados
 
-- Operação: `DEL consolidation:{date}`
-- **Fire-and-forget:** Falha de invalidação não aborta o processamento
-- **Consequência de falha:** Cache fica stale por no máximo 5 minutos (TTL natural)
-- Próxima consulta buscará dados frescos do MongoDB
+- Chave idempotência: UUID gerado pelo Transactions Service
+- Busca em `processed_events` collection
+- Se existe: retorna sucesso (skip processamento)
+- Se novo: prossegue para FASE 3, registra depois
+
+**Duração:** Documento em `processed_events` expira em 7 dias (TTL index).
+
+---
+
+### MemoryCacheInvalidator
+**Responsabilidade:** Invalidar cache após consolidação
+
+- Operação: `DELETE consol:{date}` do IMemoryCache
+- **Fire-and-forget:** se falhar, silenciosamente continua
+- **Consequência:** Cache fica stale por no máximo 5 min (TTL natural)
+- Próxima leitura do cliente obtém dados frescos do MongoDB
 
 ---
 
 ## Fluxos de Sequência
 
-### Fluxo 1: Processar TransactionCreated (Worker)
+### Fluxo 1: Processar TransactionCreatedEvent (Worker)
 
 ```mermaid
 sequenceDiagram
     participant MQ as RabbitMQ
-    participant CONS as TransactionCreatedConsumer
-    participant IDEMP as IdempotencyChecker
-    participant REPO as MongoConsolidationRepository
-    participant CALC as ConsolidationCalculator
-    participant IDMPSTORE as MongoIdempotencyRepository
-    participant CACHE as RedisCacheInvalidator
+    participant TC as TransactionCreatedConsumer
+    participant IH as IngestTransactionsBatchHandler
+    participant CB as ConsolidationBatchReceivedConsumer
+    participant PH as ProcessConsolidationBatchHandler
+    participant DB as MongoDB
+    participant CI as CacheInvalidator
 
-    MQ->>CONS: TransactionCreated { type: CREDIT, amount: 500, date: "2024-03-15", idempotencyKey: "uuid" }
+    MQ->>TC: TransactionCreatedEvent
+    TC->>IH: Dispatch IngestTransactionsBatchCommand
+    IH->>DB: GetAsync(transactions, date)
+    DB-->>IH: Transações
+    IH->>MQ: Publish ConsolidationBatchReceivedEvent
 
-    CONS->>IDEMP: AlreadyProcessed("uuid")?
-    IDEMP-->>CONS: ❌ Não processado
+    MQ->>CB: ConsolidationBatchReceivedEvent
+    CB->>PH: Dispatch ProcessConsolidationBatchCommand
 
-    CONS->>REPO: GetByDateAsync("2024-03-15")
-    REPO-->>CONS: DailyConsolidation { credits:300, debits:150, balance:150, count:2 }
+    PH->>PH: FASE 1 - Validar
+    PH->>DB: CheckIdempotency(key)
+    DB-->>PH: Não processado
+    PH->>DB: GetByDate(date)
+    DB-->>PH: Consolidado atual (ou nulo)
 
-    CONS->>CALC: ApplyDelta(consolidation, type:CREDIT, amount:500)
-    Note over CALC: totalCredits = 300 + 500 = 800<br/>totalDebits  = 150<br/>balance      = 650<br/>count        = 3
-    CALC-->>CONS: DailyConsolidation { date, credits:800, debits:150, balance:650, count:3 }
+    PH->>PH: FASE 3 - BEGIN TX
+    PH->>DB: Upsert(consolidado)
+    DB-->>PH: ✅
+    PH->>DB: Register idempotency
+    DB-->>PH: ✅
+    PH->>PH: COMMIT TX
 
-    Note over CONS,IDMPSTORE: MongoDB Transaction (Atomicidade)
-    CONS->>REPO: UpsertAsync(consolidation, session)
-    REPO-->>CONS: ✅ Upserted
-
-    CONS->>IDMPSTORE: RegisterAsync("uuid", session)
-    IDMPSTORE-->>CONS: ✅ Registrado
-
-    Note over CONS: COMMIT session
-
-    CONS->>CACHE: InvalidateAsync("2024-03-15")
-    CACHE-->>CONS: ✅ Cache invalidado
-
-    CONS->>MQ: ACK ✅
+    PH->>MQ: Publish DailyConsolidationUpdatedEvent
+    MQ->>CI: Event para Consolidation API
+    CI->>CI: Invalida cache
 ```
 
 ---
 
-### Fluxo 2: Processar Evento Duplicado (Idempotência)
+### Fluxo 2: Consultar Consolidado (API - Cache HIT)
 
-```mermaid
-sequenceDiagram
-    participant MQ as RabbitMQ
-    participant CONS as TransactionCreatedConsumer
-    participant IDEMP as IdempotencyChecker
-
-    MQ->>CONS: TransactionCreated { idempotencyKey: "uuid-already-done" }
-
-    CONS->>IDEMP: AlreadyProcessed("uuid-already-done")?
-    IDEMP-->>CONS: ✅ Já processado!
-
-    CONS->>MQ: ACK ✅ (ignora silenciosamente)
-
-    Note over CONS: Nenhuma escrita realizada
-    Note over CONS: Nenhuma invalidação de cache
-    Note over CONS: Idempotência garantida
+```
+GET /api/v1/consolidation/daily?date=2024-03-15
+  │
+  ├─ ConsolidationService.GetDailyAsync()
+  │  │
+  │  └─ IMemoryCache.GetAsync("consol:2024-03-15")
+  │     ✅ HIT! Encontrado (TTL 5min)
+  │
+  └─ RETURN 200 OK { date, totalCredits, totalDebits, balance }
+     Duração: < 50ms
 ```
 
 ---
 
-### Fluxo 3: Consultar Saldo (Cache HIT)
+### Fluxo 3: Consultar Consolidado (API - Cache MISS)
 
-```mermaid
-sequenceDiagram
-    actor Merchant as Comerciante
-    participant GW as API Gateway
-    participant EP as ConsolidationEndpoints
-    participant SVC as ConsolidationService
-    participant CACHE as RedisConsolidationCache
-
-    Merchant->>GW: GET /api/v1/consolidation/daily?date=2024-03-15 (JWT)
-    GW->>GW: Valida JWT + Rate limit
-    GW->>EP: Encaminha
-
-    EP->>SVC: GetDailyAsync("2024-03-15")
-
-    SVC->>CACHE: GetAsync("2024-03-15")
-    CACHE-->>SVC: ✅ HIT { date, credits, debits, balance, count }
-
-    SVC-->>EP: DailyConsolidationDto
-    EP-->>GW: 200 OK
-    GW-->>Merchant: 200 OK { date, totalCredits, totalDebits, balance }
-
-    Note over SVC: Duração: < 50ms
 ```
-
----
-
-### Fluxo 4: Consultar Saldo (Cache MISS)
-
-```mermaid
-sequenceDiagram
-    actor Merchant as Comerciante
-    participant GW as API Gateway
-    participant EP as ConsolidationEndpoints
-    participant SVC as ConsolidationService
-    participant CACHE as RedisConsolidationCache
-    participant REPO as MongoConsolidationRepository
-
-    Merchant->>GW: GET /api/v1/consolidation/daily?date=2024-03-15 (JWT)
-    GW->>GW: Valida JWT + Rate limit
-    GW->>EP: Encaminha
-
-    EP->>SVC: GetDailyAsync("2024-03-15")
-
-    SVC->>CACHE: GetAsync("2024-03-15")
-    CACHE-->>SVC: ❌ MISS (expirou ou nunca armazenado)
-
-    SVC->>REPO: GetByDateAsync("2024-03-15")
-    REPO-->>SVC: DailyConsolidation { ... }
-
-    SVC->>CACHE: SetAsync("2024-03-15", data, ttl=5min)
-    CACHE-->>SVC: ✅ Armazenado
-
-    SVC-->>EP: DailyConsolidationDto
-    EP-->>GW: 200 OK
-    GW-->>Merchant: 200 OK { date, totalCredits, totalDebits, balance }
-
-    Note over SVC: Duração: 200-500ms
-```
-
----
-
-### Fluxo 5: Consultar Saldo (Data Não Encontrada)
-
-```mermaid
-sequenceDiagram
-    actor Merchant as Comerciante
-    participant GW as API Gateway
-    participant EP as ConsolidationEndpoints
-    participant SVC as ConsolidationService
-    participant CACHE as RedisConsolidationCache
-    participant REPO as MongoConsolidationRepository
-
-    Merchant->>GW: GET /api/v1/consolidation/daily?date=2000-01-01 (JWT)
-    GW->>EP: Encaminha
-
-    EP->>SVC: GetDailyAsync("2000-01-01")
-
-    SVC->>CACHE: GetAsync("2000-01-01")
-    CACHE-->>SVC: ❌ MISS
-
-    SVC->>REPO: GetByDateAsync("2000-01-01")
-    REPO-->>SVC: ❌ null (não existe)
-
-    SVC-->>EP: null
-    EP-->>GW: 404 Not Found
-    GW-->>Merchant: 404 Not Found { "message": "No consolidation found for 2000-01-01" }
+GET /api/v1/consolidation/daily?date=2024-03-15
+  │
+  ├─ ConsolidationService.GetDailyAsync()
+  │  │
+  │  ├─ IMemoryCache.GetAsync("consol:2024-03-15")
+  │  │  ❌ MISS (expirou ou não armazenado)
+  │  │
+  │  ├─ MongoConsolidationRepository.GetByDateAsync("2024-03-15")
+  │  │  ✅ Encontrado em MongoDB
+  │  │
+  │  ├─ IMemoryCache.SetAsync(value, TTL: 5min)
+  │  │  ✅ Armazenado
+  │  │
+  │  └─ RETURN 200 OK { date, totalCredits, totalDebits, balance }
+  │     Duração: 200-500ms
 ```
 
 ---
@@ -413,44 +432,45 @@ sequenceDiagram
 ### Worker DOWN → API continua operando
 
 ```
-Cenário: Worker está down por 1 hora
+Consolidation.Worker está down (1 hora)
 
-Durante o downtime:
+DURANTE o downtime:
   ✅ Consolidation API: Retorna dados do cache/DB (possivelmente defasado)
   ✅ Transactions API: Continua registrando lançamentos normalmente
   ✅ RabbitMQ: Acumula mensagens na fila (consolidation.input)
 
-Quando Worker volta:
-  1. Consome todas as mensagens acumuladas (ordem preservada)
-  2. IdempotencyChecker garante que duplicatas são ignoradas
+QUANDO Worker volta:
+  1. Consome mensagens acumuladas (ordem preservada)
+  2. IdempotencyChecker ignora duplicatas
   3. Consolidado atualizado em segundos
-  4. Cache invalidado automaticamente
+  4. DailyConsolidationUpdatedConsumer (API) invalida cache
 ```
 
-### Redis DOWN → API degrada graciosamente
+### IMemoryCache DOWN → API degrada graciosamente
 
 ```
-Cenário: Redis está down
+IMemoryCache falha (improvável, está in-process)
 
-  ✅ ConsolidationService: Detecta falha no cache → vai direto para MongoDB
-  ✅ API responde normalmente (mas mais lenta: 200-500ms vs < 50ms)
-  ⚠️ Worker: CacheInvalidator falha silenciosamente (fire-and-forget)
-  ✅ Quando Redis volta: cache se popula naturalmente na próxima consulta
+CONSEQUÊNCIA:
+  ✅ ConsolidationService: Detecta cache miss
+  ✅ Fallback para MongoDB: busca dados (mais lento)
+  ✅ API responde normalmente, mas com latência 200-500ms vs <50ms
+  ✅ Cache se repopula na próxima leitura bem-sucedida
 ```
 
 ---
 
 ## Padrões Aplicados
 
-| Padrão | Onde Aplicado | Benefício |
-|--------|--------------|-----------|
-| **Cache-First** | ConsolidationService | Latência < 50ms no happy path |
-| **At-Least-Once + Idempotência** | Worker + IdempotencyChecker | Segurança de reprocessamento |
-| **Upsert** | MongoConsolidationRepository | Uma data = um documento (RN-04) |
-| **Fire-and-forget** | RedisCacheInvalidator | Falha de cache não aborta processamento |
-| **Event-Carried State Transfer** | TransactionCreatedConsumer | Worker usa dados do evento — sem cross-DB read |
-| **Delta Incremental** | ConsolidationCalculator | Atualização eficiente sem recálculo completo |
+| Padrão | Onde | Benefício |
+|--------|------|-----------|
+| **Cache-First** | ConsolidationService | < 50ms latência no happy path |
+| **At-Least-Once + Idempotência** | Worker | Safety em reprocessamento |
+| **Upsert** | MongoConsolidationRepository | Uma data = um documento |
+| **Fire-and-Forget** | CacheInvalidator | Falha de cache não aborta flow |
+| **Event-Carried State Transfer** | Worker consume do evento | Sem cross-DB reads |
+| **Delta Incremental** | ConsolidationCalculator | Atualização eficiente |
 
 ---
 
-**Próximo documento:** `docs/architecture/06-architectural-patterns.md` (padrões adotados com justificativas)
+**Próximo documento:** `docs/security/01-security-architecture.md` (atualização)

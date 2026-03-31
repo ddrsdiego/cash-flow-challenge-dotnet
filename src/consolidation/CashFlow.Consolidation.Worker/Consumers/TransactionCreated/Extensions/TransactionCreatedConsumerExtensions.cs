@@ -2,7 +2,7 @@ using CashFlow.Consolidation.Worker.Application.UseCases.IngestTransactionsBatch
 using CashFlow.SharedKernel.Messages;
 using MassTransit;
 
-namespace CashFlow.Consolidation.Worker.Consumers.Extensions;
+namespace CashFlow.Consolidation.Worker.Consumers.TransactionCreated.Extensions;
 
 /// <summary>
 /// Extension method to map TransactionCreatedEvent to IngestTransactionsBatchCommand.

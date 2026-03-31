@@ -1,13 +1,13 @@
-using System;
-using System.Threading.Tasks;
-using CashFlow.Consolidation.Worker.Consumers.Extensions;
+using CashFlow.Consolidation.Worker.Consumers.TransactionCreated.Extensions;
 using CashFlow.Consolidation.Worker.Extensions;
 using CashFlow.SharedKernel.Messages;
 using MassTransit;
 using MediatR;
 using Microsoft.Extensions.Logging;
+using System;
+using System.Threading.Tasks;
 
-namespace CashFlow.Consolidation.Worker.Consumers;
+namespace CashFlow.Consolidation.Worker.Consumers.TransactionCreated;
 
 /// <summary>
 /// Consumes TransactionCreatedEvent from RabbitMQ topic (cashflow.transactions, routing: transaction.created).

@@ -63,7 +63,8 @@ public static class TransactionEndpoints
         CancellationToken cancellationToken)
     {
         var tracerId = context.TraceIdentifier;
-        var query = new GetTransactionByIdQuery(tracerId, id);
+        var userId = context.User.FindFirst("sub")?.Value;
+        var query = new GetTransactionByIdQuery(tracerId, id, userId);
         var response = await mediator.Send(query, cancellationToken);
         return ToHttpResult(response);
     }
@@ -79,9 +80,11 @@ public static class TransactionEndpoints
         int pageSize = 20)
     {
         var tracerId = context.TraceIdentifier;
+        var userId = context.User.FindFirst("sub")?.Value;
 
         var query = new ListTransactionsQuery(
             tracerId,
+            userId,
             startDate ?? DateTime.UtcNow.Date.AddDays(-30),
             endDate ?? DateTime.UtcNow.Date,
             type,

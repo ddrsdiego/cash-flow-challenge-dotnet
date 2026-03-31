@@ -24,7 +24,7 @@ public class TransactionRepository : ITransactionRepository
         _context = context ?? throw new ArgumentNullException(nameof(context));
     }
 
-    public Task<Maybe<Transaction>> GetByIdAsync(string id, CancellationToken cancellationToken = default)
+    public Task<Maybe<Transaction>> GetByIdAsync(string id, string? userId = null, CancellationToken cancellationToken = default)
     {
         throw new NotImplementedException("Not used in Worker");
     }
@@ -33,8 +33,9 @@ public class TransactionRepository : ITransactionRepository
         DateTime startDate,
         DateTime endDate,
         TransactionType? type,
-        int page,
-        int pageSize,
+        string? userId = null,
+        int page = 1,
+        int pageSize = 20,
         CancellationToken cancellationToken = default)
     {
         throw new NotImplementedException("Not used in Worker");
@@ -44,6 +45,7 @@ public class TransactionRepository : ITransactionRepository
         DateTime startDate,
         DateTime endDate,
         TransactionType? type,
+        string? userId = null,
         CancellationToken cancellationToken = default)
     {
         throw new NotImplementedException("Not used in Worker");

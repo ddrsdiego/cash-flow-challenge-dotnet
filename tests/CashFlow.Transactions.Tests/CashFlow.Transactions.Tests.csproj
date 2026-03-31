@@ -25,6 +25,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\CashFlow.SharedKernel\CashFlow.SharedKernel.csproj" />
+    <ProjectReference Include="..\..\src\transactions\CashFlow.Transactions.API\CashFlow.Transactions.API.csproj" />
   </ItemGroup>
 
 </Project>

@@ -29,7 +29,7 @@ Um comerciante precisa controlar seu fluxo de caixa diário com lançamentos de 
 | Requisito | Como Atendemos |
 |-----------|----------------|
 | Lançamentos **NÃO** ficam indisponíveis se Consolidado falhar | Comunicação **assíncrona via RabbitMQ** — serviços completamente desacoplados |
-| Consolidado suporta **50 req/s com ≤ 5% de perda** | **Cache-First com Redis** (TTL 5min) + horizontal scaling |
+| Consolidado suporta **50 req/s com ≤ 5% de perda** | **Cache-First com IMemoryCache** (TTL 5min in-process) + horizontal scaling + MongoDB para persistência |
 
 ### Fluxo Principal
 
@@ -43,32 +43,45 @@ Comerciante
 │  • Valida JWT via Keycloak               │
 │  • Rate Limiting (Fixed Window per IP)   │
 │  • Roteamento para downstream services   │
-└─────────────┬────────────────────────────┘
-              │
-    ┌─────────┴──────────┐
-    │                    │
-    ▼                    ▼
-┌──────────┐    ┌────────────────┐
-│Transactions│  │  Consolidation │
-│   API    │    │     API        │
-│ :8081    │    │    :8082       │
-└────┬─────┘    └───────┬────────┘
-     │                  │
-     │ MongoDB Outbox    │ Cache-First
-     │ Transaction       │ (Redis TTL 5min)
-     ▼ Created           │
-┌──────────┐             │
-│ RabbitMQ │             │ Cache MISS
-└────┬─────┘             ▼
-     │          ┌──────────────────┐
-     │          │   MongoDB        │
-     │          │ consolidation_db │
-     ▼          └──────────────────┘
-┌─────────────────┐
-│  Consolidation  │
-│     Worker      │  ← Upsert + Invalidate Cache
-│  (MassTransit)  │
-└─────────────────┘
+└──────────────┬─────────────────────────────┘
+               │
+               ▼
+        ┌─────────────────────────┐
+        │  Transactions API       │  ← Porta :8081
+        │ (RawRequest + Outbox)   │
+        └─────────────┬───────────┘
+                      │
+               ┌──────┴──────┐
+               │             │
+               ▼             ▼
+        ┌─────────────┐   ┌──────────┐
+        │ Transactions│   │ RabbitMQ │
+        │  .Worker    │   │(Event    │
+        │ (Batch Proc)    │Broker)   │
+        └──────┬──────┘   └─────┬────┘
+               │                │
+        ┌──────┘                │
+        │                       │
+        ▼                       ▼
+    ┌────────────────────────────────┐
+    │ Consolidation.Worker           │
+    │ (Batch Ingestion + Processing) │
+    └────────────────┬───────────────┘
+                     │
+                     ▼
+    ┌──────────────────────────────┐
+    │  Consolidation API           │  ← Porta :8082
+    │ (Cache-First + IMemoryCache) │
+    └────────────────┬─────────────┘
+                     │
+        ┌────────────┴────────────┐
+        │ (HIT < 50ms)            │ (MISS 200-500ms)
+        ▼                         ▼
+   ┌──────────┐         ┌──────────────────┐
+   │IMemory   │         │   MongoDB        │
+   │Cache     │         │consolidation_db  │
+   │(TTL 5min)│         └──────────────────┘
+   └──────────┘
 ```
 
 ---
@@ -214,7 +227,7 @@ cash-flow-challenge-dotnet/
 | **Mensageria** | MassTransit + MongoDB Outbox | 8.2.5 | Atomicidade transacional, sem reinventar outbox |
 | **DB Lançamentos** | MongoDB 7.0 | 2.28.0 (driver) | NoSQL flexível, suporte a transações |
 | **DB Consolidado** | MongoDB 7.0 | 2.28.0 (driver) | Database-per-service isolation |
-| **Cache** | Redis 7.2 | 2.7.10 (StackExchange) | Cache-first, TTL 5min, < 50ms p95 |
+| **Cache** | IMemoryCache (.NET) | 8.0 | Cache in-process, TTL 5min, < 50ms; Redis disponível para evolução futura |
 | **Auth** | Keycloak | 24.x | OAuth2/OIDC, RBAC, open-source |
 | **Observabilidade** | OpenTelemetry + Seq + Jaeger + Prometheus | 1.8.x | Vendor-neutral, sem lock-in |
 | **Functional Types** | CSharpFunctionalExtensions | 3.6.0 | Maybe<T>, Result<T> idiomáticos |
@@ -318,7 +331,7 @@ dotnet test CashFlow.sln
 | **Fase 4.3** | Transactions.Worker (Fast Ingestion + Batch Processing) | ✅ Completo |
 | **Fase 4.4** | Consolidation API (JWT Auth + health endpoint) | ✅ Completo |
 | **Fase 4.5** | API Gateway (YARP + JWT Auth + Rate Limiting + OTel) | ✅ Completo |
-| **Fase 4.6** | Consolidation Worker | 🔄 Planejado |
+| **Fase 4.6** | Consolidation Worker (MassTransit Consumer + Batch Processing) | ✅ Completo |
 | **Fase 5** | Testes Unitários e de Integração | 🔄 Planejado |
 
 ---

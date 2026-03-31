@@ -1,7 +1,7 @@
-using System;
 using Microsoft.Extensions.Logging;
+using System;
 
-namespace CashFlow.Consolidation.Worker.Consumers;
+namespace CashFlow.Consolidation.Worker.Consumers.ConsolidationBatchReceived;
 
 internal static partial class ConsolidationBatchReceivedConsumerLog
 {

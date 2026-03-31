@@ -5,4 +5,5 @@ namespace CashFlow.Transactions.API.Application.UseCases.GetTransactionById;
 
 public record GetTransactionByIdQuery(
     string TracerId,
-    string TransactionId) : IRequest<Response>;
+    string TransactionId,
+    string? UserId) : IRequest<Response>;

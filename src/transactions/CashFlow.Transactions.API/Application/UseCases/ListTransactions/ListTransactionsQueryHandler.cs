@@ -40,6 +40,9 @@ public sealed class ListTransactionsQueryHandler : IRequestHandler<ListTransacti
         if (request.StartDate > request.EndDate)
             return ListTransactionsErrors.InvalidDateRange(request.TracerId);
 
+        if (string.IsNullOrWhiteSpace(request.UserId))
+            return ListTransactionsErrors.InvalidUserId(request.TracerId);
+
         var page = request.Page < 1 ? 1 : request.Page;
         var pageSize = request.PageSize < 1 ? 20 : request.PageSize > 100 ? 100 : request.PageSize;
 
@@ -85,6 +88,7 @@ public sealed class ListTransactionsQueryHandler : IRequestHandler<ListTransacti
                 request.StartDate,
                 request.EndDate,
                 request.Type,
+                request.UserId,
                 page,
                 pageSize,
                 cancellationToken);
@@ -93,6 +97,7 @@ public sealed class ListTransactionsQueryHandler : IRequestHandler<ListTransacti
                 request.StartDate,
                 request.EndDate,
                 request.Type,
+                request.UserId,
                 cancellationToken);
 
             var result = new TransactionPageResult(transactions.ToList(), totalCount);

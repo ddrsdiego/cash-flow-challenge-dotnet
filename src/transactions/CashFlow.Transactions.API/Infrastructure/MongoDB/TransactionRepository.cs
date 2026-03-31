@@ -20,9 +20,14 @@ public class TransactionRepository : ITransactionRepository
         _context = context ?? throw new ArgumentNullException(nameof(context));
     }
 
-    public async Task<Maybe<Transaction>> GetByIdAsync(string id, CancellationToken cancellationToken = default)
+    public async Task<Maybe<Transaction>> GetByIdAsync(string id, string? userId = null, CancellationToken cancellationToken = default)
     {
-        var filter = Builders<Transaction>.Filter.Eq(t => t.Id, id);
+        var filterBuilder = Builders<Transaction>.Filter;
+        var filter = filterBuilder.Eq(t => t.Id, id);
+        
+        if (!string.IsNullOrWhiteSpace(userId))
+            filter &= filterBuilder.Eq(t => t.UserId, userId);
+
         var transaction = await _context.Transactions
             .Find(filter)
             .FirstOrDefaultAsync(cancellationToken);
@@ -36,8 +41,9 @@ public class TransactionRepository : ITransactionRepository
         DateTime startDate,
         DateTime endDate,
         TransactionType? type,
-        int page,
-        int pageSize,
+        string? userId = null,
+        int page = 1,
+        int pageSize = 20,
         CancellationToken cancellationToken = default)
     {
         var filterBuilder = Builders<Transaction>.Filter;
@@ -46,6 +52,9 @@ public class TransactionRepository : ITransactionRepository
 
         if (type.HasValue)
             filter &= filterBuilder.Eq(t => t.Type, type.Value);
+
+        if (!string.IsNullOrWhiteSpace(userId))
+            filter &= filterBuilder.Eq(t => t.UserId, userId);
 
         var skip = (page - 1) * pageSize;
 
@@ -63,6 +72,7 @@ public class TransactionRepository : ITransactionRepository
         DateTime startDate,
         DateTime endDate,
         TransactionType? type,
+        string? userId = null,
         CancellationToken cancellationToken = default)
     {
         var filterBuilder = Builders<Transaction>.Filter;
@@ -71,6 +81,9 @@ public class TransactionRepository : ITransactionRepository
 
         if (type.HasValue)
             filter &= filterBuilder.Eq(t => t.Type, type.Value);
+
+        if (!string.IsNullOrWhiteSpace(userId))
+            filter &= filterBuilder.Eq(t => t.UserId, userId);
 
         return await _context.Transactions
             .CountDocumentsAsync(filter, cancellationToken: cancellationToken);

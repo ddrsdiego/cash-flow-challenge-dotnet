@@ -3,14 +3,16 @@
 ## Visão Geral
 
 O **Container Diagram** detalha a estrutura interna do **CashFlow System**. Mostra:
-- **4 containers de aplicação** (.NET 8 APIs e Worker)
-- **3 data stores** (MongoDB, Redis, RabbitMQ)
+- **5 containers de aplicação** (.NET 8 APIs, Workers)
+- **3 data stores** (MongoDB, IMemoryCache, RabbitMQ)
 - **1 Identity Provider** (Keycloak)
 - **Stack de observabilidade** (OTel, Jaeger, Prometheus, Grafana, Seq)
 - **3 limites de rede** (frontend, backend, monitoring)
 - **Fluxos de dados** (síncrono e assíncrono)
 
 Um "container" aqui é um processo executável ou microserviço — algo que pode ser deployado independentemente.
+
+> **Nota importante:** A arquitetura usa **IMemoryCache (.NET in-process)** como cache padrão no MVP. Redis está disponível na infraestrutura para evolução futura (Phase 2).
 
 ---
 
@@ -27,17 +29,19 @@ C4Container
     }
     
     System_Boundary("backend-net", "Backend Network") {
-        Container(transapi, "Transactions API", ".NET 8 Minimal API", "• POST /transactions (criar lançamento)<br/>• GET /transactions (listar por período)<br/>• MongoDB persistência<br/>• Outbox Pattern + RabbitMQ publish")
+        Container(transapi, "Transactions API", ".NET 8 Minimal API", "• POST /transactions (criar lançamento)<br/>• GET /transactions (listar por período)<br/>• MediatR CQRS<br/>• MongoDB Outbox Pattern")
         
-        Container(consapi, "Consolidation API", ".NET 8 Minimal API", "• GET /consolidation/daily (saldo consolidado)<br/>• Cache-first (Redis)<br/>• Fallback para MongoDB<br/>• TTL 5 minutos")
+        Container(transworker, "Transactions.Worker", ".NET 8 BackgroundService", "• BatcherBackgroundService (polling)<br/>• MassTransit Consumer<br/>• Batch processing (RawRequest → Transaction)<br/>• Publica TransactionCreated event")
         
-        Container(worker, "Consolidation Worker", ".NET 8 BackgroundService", "• RabbitMQ consumer<br/>• Processa TransactionCreated events<br/>• Recalcula saldo diário<br/>• Invalida cache Redis<br/>• Idempotência garantida")
+        Container(consapi, "Consolidation API", ".NET 8 Minimal API", "• GET /consolidation/daily<br/>• Cache-First (IMemoryCache)<br/>• MongoDB fallback (cache miss)<br/>• TTL 5 minutos")
         
-        ContainerDb(mongodb, "MongoDB 7.0", "Database", "• transactions_db<br/>  └─ transactions collection<br/>• consolidation_db<br/>  └─ daily_consolidation collection<br/>• Segurança: replicaset ready")
+        Container(consworker, "Consolidation.Worker", ".NET 8 BackgroundService", "• 2 MassTransit Consumers<br/>• TransactionCreatedConsumer<br/>• ConsolidationBatchReceivedConsumer<br/>• Batch processing de consolidações")
         
-        ContainerDb(redis, "Redis 7.2", "Cache", "• Cache de consolidado (TTL 5min)<br/>• Chave: consolidation:{date}<br/>• LRU eviction policy")
+        ContainerDb(mongodb, "MongoDB 7.0", "Database", "• transactions_db<br/>  ├─ raw_requests<br/>  ├─ transactions<br/>  └─ outbox<br/>• consolidation_db<br/>  ├─ daily_consolidations<br/>  └─ processed_events")
         
-        ContainerDb(rabbitmq, "RabbitMQ 3.13", "Message Broker", "• Exchange: events<br/>• Queue: transaction.created<br/>• Queue: consolidation.input<br/>• DLQ para retry fallidos<br/>• Prometheus metrics enabled")
+        ContainerDb(memcache, "IMemoryCache", "Cache (In-Process)", "• Consolidação cache (TTL 5min)<br/>• Chave: consol:{date}<br/>• < 50ms latência<br/>• Per-instance (não compartilhado)")
+        
+        ContainerDb(rabbitmq, "RabbitMQ 3.13", "Message Broker", "• Topic: cashflow.transactions<br/>• Topic: cashflow.consolidation<br/>• Routing keys: transaction.created<br/>• DLQ para análise de falhas<br/>• Prometheus metrics enabled")
     }
     
     System_Boundary("keycloak-net", "Identity Provider Network") {
@@ -66,18 +70,22 @@ C4Container
     Rel(gateway, consapi, "Rota para /consolidation", "HTTP 8080")
     Rel(gateway, keycloak, "Valida token com", "OAuth 2.0")
     
-    Rel(transapi, mongodb, "Persiste lançamentos", "MongoDB driver")
-    Rel(transapi, rabbitmq, "Publica TransactionCreated", "AMQP")
+    Rel(transapi, mongodb, "Persiste lançamentos + outbox", "MongoDB driver")
     Rel(transapi, otel, "Envia spans + métricas", "OTLP gRPC")
     
-    Rel(consapi, redis, "Busca cache (hit)", "Redis protocol")
+    Rel(transworker, mongodb, "Busca raw_requests + persiste transactions", "MongoDB driver")
+    Rel(transworker, rabbitmq, "Publica TransactionBatchReady + TransactionCreated", "AMQP")
+    Rel(transworker, otel, "Envia spans + métricas", "OTLP gRPC")
+    
+    Rel(consapi, memcache, "Busca cache (hit)", "In-process")
     Rel(consapi, mongodb, "Busca DB (miss)", "MongoDB driver")
     Rel(consapi, otel, "Envia spans + métricas", "OTLP gRPC")
     
-    Rel(worker, rabbitmq, "Consome eventos", "AMQP")
-    Rel(worker, mongodb, "Lê transações + escreve consolidado", "MongoDB driver")
-    Rel(worker, redis, "Invalida cache", "Redis protocol")
-    Rel(worker, otel, "Envia spans + métricas", "OTLP gRPC")
+    Rel(consworker, rabbitmq, "Consome TransactionCreated + ConsolidationBatchReceived", "AMQP")
+    Rel(consworker, mongodb, "Lê/escreve consolidações + idempotência", "MongoDB driver")
+    Rel(consworker, otel, "Envia spans + métricas", "OTLP gRPC")
+    
+    Rel(consapi, rabbitmq, "Consome DailyConsolidationUpdated (cache invalidation)", "AMQP")
     
     Rel(otel, jaeger, "Exporta traces")
     Rel(otel, seq, "Exporta logs")
@@ -143,20 +151,46 @@ C4Container
 
 ---
 
-#### 3. Consolidation API
-**Responsabilidade:** Leitura de saldo consolidado diário
+#### 3. Transactions.Worker
+**Responsabilidade:** Processamento em batch de lançamentos (transações)
+
+- **Tecnologia:** .NET 8 BackgroundService + MassTransit
+- **Padrão:** Dois estágios de batch processing
+  - **Estágio 1:** BatcherBackgroundService (polling)
+    - Busca RawRequests pendentes (timeout: 5 min, batch size: 100)
+    - Usa distributed lock para apenas uma instância processar
+    - Publica `TransactionBatchReadyEvent`
+  - **Estágio 2:** TransactionBatchReadyConsumer (MassTransit)
+    - Consome `TransactionBatchReadyEvent`
+    - Converte RawRequest → Transaction
+    - Publica `TransactionCreatedEvent` para downstream (Consolidation Worker)
+- **Idempotência:** Rastreamento de batches processados
+- **Dependências:**
+  - MongoDB (transactions_db)
+  - RabbitMQ (publicação de eventos)
+  - OTel Collector (tracing/métricas)
+
+**Resiliência:**
+- Distributed lock (MongoDB) previne race conditions entre múltiplas instâncias
+- Se RabbitMQ falha: RawRequests permanecem pendentes para retry
+- Se MongoDB falha: batch fica em PENDING até retry bem-sucedido
+
+---
+
+#### 4. Consolidation API
+**Responsabilidade:** Leitura de saldo consolidado diário (Cache-First)
 
 - **Tecnologia:** .NET 8 Minimal APIs
 - **Porta:** 8080 (exposto em 8082:8080 no docker-compose)
 - **Endpoints:**
   - `GET /api/v1/consolidation/daily?date=YYYY-MM-DD` — Saldo de data específica
   - `GET /api/v1/consolidation/daily/{date}` — Versão alternativa
-- **Padrão:** Cache-First
-  1. Busca em Redis (TTL 5min)
+- **Padrão:** Cache-First com IMemoryCache
+  1. Busca em IMemoryCache (TTL 5min, in-process)
   2. Se HIT: retorna imediatamente (< 50ms)
-  3. Se MISS: busca em MongoDB, armazena em Redis, retorna
+  3. Se MISS: busca em MongoDB, armazena em IMemoryCache, retorna
 - **Dependências:**
-  - Redis (cache)
+  - IMemoryCache (cache in-process)
   - MongoDB (consolidation_db)
   - OTel Collector (tracing/métricas)
 
@@ -172,31 +206,30 @@ C4Container
 
 ---
 
-#### 4. Consolidation Worker
-**Responsabilidade:** Processamento assíncrono de consolidações
+#### 5. Consolidation.Worker
+**Responsabilidade:** Processamento assíncrono de consolidações (dois estágios)
 
-- **Tecnologia:** .NET 8 BackgroundService (não é HTTP)
-- **Trigger:** Consome mensagens `TransactionCreated` de RabbitMQ
-- **Processo:**
-  1. Consome evento `TransactionCreated` da fila
-  2. Verifica idempotência (já foi processado?)
-  3. Busca todas as transações da data
-  4. Calcula: `balance = sum(credits) - sum(debits)`
-  5. UPSERT em `consolidation_db.daily_consolidation`
-  6. DELETE chave de cache em Redis: `consolidation:{date}`
-  7. ACK mensagem ao RabbitMQ
-- **Retry:** Exponential backoff (1s, 2s, 4s)
-- **DLQ:** Mensagens com 3+ falhas vão para dead-letter queue para investigação manual
+- **Tecnologia:** .NET 8 BackgroundService + MassTransit
+- **Padrão:** Dois estágios de consumo
+  - **Estágio 1:** TransactionCreatedConsumer
+    - Consome `TransactionCreatedEvent` (tópico: cashflow.transactions)
+    - Acumula em lote (IngestTransactionsBatch)
+    - Publica `ConsolidationBatchReceivedEvent`
+  - **Estágio 2:** ConsolidationBatchReceivedConsumer
+    - Consome `ConsolidationBatchReceivedEvent` (tópico: cashflow.consolidation)
+    - Processa consolidações: `balance = sum(credits) - sum(debits)`
+    - UPSERT em `consolidation_db.daily_consolidations`
+    - Publica `DailyConsolidationUpdatedEvent` (para Consolidation API invalidar cache)
+- **Idempotência:** Armazenamento de evento-processado em `processed_events` (TTL 7 dias)
 - **Dependências:**
   - RabbitMQ (consumer)
   - MongoDB (consolidation_db)
-  - Redis (cache invalidation)
   - OTel Collector (tracing/métricas)
 
 **Resiliência:**
 - Se RabbitMQ falha: mensagens ficam enfileiradas
-- Se MongoDB falha: retry com backoff exponencial
-- Se Redis falha: continua sem cache (próxima leitura buscará do DB)
+- Se MongoDB falha: retry com backoff exponencial (até DLQ)
+- Idempotência garante safety em reprocessamento
 
 ---
 
@@ -237,21 +270,22 @@ C4Container
 
 ---
 
-#### Redis 7.2
-**Responsabilidade:** Cache de leitura rápida
+#### IMemoryCache (.NET)
+**Responsabilidade:** Cache de leitura rápida (in-process)
 
-- **Imagem:** redis:7.2-alpine
+- **Tecnologia:** `Microsoft.Extensions.Caching.Memory` (built-in no .NET)
 - **Configuração:**
-  - `requirepass` (autenticação)
-  - `maxmemory` 128M
-  - `maxmemory-policy` allkeys-lru (evict oldest keys se cheio)
-  - `appendonly yes` (AOF persistence)
+  - TTL: 5 minutos (configurável)
+  - Política: No eviction (cache é local por instância)
+  - Armazenamento: RAM da aplicação
 - **Estrutura de chaves:**
-  - `consolidation:{date}` → JSON da consolidação (TTL 5min)
-  - Formato chave: `consolidation:2024-03-15`
-- **Política de limpeza:**
-  - Se chegar a 128M, evicta as chaves menos recentemente usadas (LRU)
-  - TTL 5 minutos automático (Redis evita dados stale)
+  - `consol:{date}` → DailyConsolidationResponse (JSON serializado)
+  - Formato chave: `consol:2024-03-15`
+- **Limitações vs Redis:**
+  - ✅ Rápido: < 50ms para leitura
+  - ❌ Não compartilhado entre instâncias (se houver múltiplas replicas, cada uma tem seu cache)
+  - ❌ Perdido ao reiniciar container
+- **Evolução:** Em produção com múltiplas réplicas, considerar Redis (see ADR-008)
 
 ---
 
@@ -404,7 +438,7 @@ Duração típica: T0 a T0+500ms (inclusve processamento assíncrono)
 
 ---
 
-### Fluxo 2: Consultar Saldo Consolidado (Cache Hit)
+### Fluxo 2: Consultar Saldo Consolidado (Cache HIT)
 
 ```
 1. Comerciante
@@ -415,32 +449,33 @@ Duração típica: T0 a T0+500ms (inclusve processamento assíncrono)
    ├─ Auth: valida JWT
    └─ Rota: encaminha para Consolidation API
 
-3. Consolidation API
-   ├─ Busca em Redis: consolidation:2024-03-15
-   ├─ HIT! Cache encontrado
-   ├─ Retorna resultado
+3. Consolidation API (Cache-First)
+   ├─ ConsolidationService.GetDailyAsync()
+   ├─ IMemoryCache.GetAsync(key: "consol:2024-03-15")
+   ├─ HIT! Cache encontrado (TTL 5min)
+   ├─ Retorna DailyConsolidationResponse
    └─ RETURN 200 OK
 
-Duração: < 50ms (operação local em memória)
+Duração: < 50ms (lookup in-process)
 ```
 
 ---
 
-### Fluxo 3: Consultar Saldo Consolidado (Cache Miss)
+### Fluxo 3: Consultar Saldo Consolidado (Cache MISS)
 
 ```
 1-2. (Igual ao fluxo anterior até Consolidation API)
 
-3. Consolidation API
-   ├─ Busca em Redis: consolidation:2024-03-15
-   ├─ MISS! Cache expirou ou não existe
-   ├─ Busca em MongoDB: consolidation_db.daily_consolidation
-   ├─ Encontrou resultado
-   ├─ STORE em Redis (TTL 5 min): consolidation:2024-03-15
-   ├─ Retorna resultado
+3. Consolidation API (Cache-First)
+   ├─ IMemoryCache.GetAsync(key)
+   ├─ MISS! Cache expirou ou nunca foi armazenado
+   ├─ MongoConsolidationRepository.GetByDateAsync("2024-03-15")
+   ├─ Encontrou resultado em MongoDB
+   ├─ IMemoryCache.SetAsync(key, value, ttl: 5min)
+   ├─ Retorna DailyConsolidationResponse
    └─ RETURN 200 OK
 
-Duração: 200-500ms (query MongoDB + serialização)
+Duração: 200-500ms (query MongoDB + serialização + cache set)
 ```
 
 ---
@@ -466,12 +501,13 @@ Duração: 200-500ms (query MongoDB + serialização)
 
 ## Isolamento de Falhas
 
-| Cenário | Transactions | Consolidation | Resultado |
-|---------|--------------|---------------|-----------|
-| Worker DOWN | ✅ 100% funcional | ⚠️ Desatualizado | Novos lançamentos criados, consolidado fica com dados velhos |
-| Redis DOWN | ✅ Funcional | ⚠️ Sem cache | Consolidation API mais lenta (queries do MongoDB) |
-| MongoDB DOWN | ❌ Falha | ❌ Falha | Ambos serviços indisponíveis |
-| RabbitMQ DOWN | ⚠️ Degradado | ⚠️ Degradado | Lançamentos criados mas não propagam para consolidado |
+| Cenário | Transactions API | Transactions.Worker | Consolidation API | Consolidation.Worker | Resultado |
+|---------|-----------------|---------------------|------------------|---------------------|-----------|
+| Transactions.Worker DOWN | ✅ 100% | ❌ DOWN | ✅ 100% | ⚠️ Sem eventos | Lançamentos criados, consolidado desatualizado até worker voltar |
+| Consolidation.Worker DOWN | ✅ 100% | ✅ 100% | ✅ 100% | ❌ DOWN | Lançamentos processados, consolidado desatualizado até worker voltar |
+| IMemoryCache (in-process) | ✅ 100% | ✅ 100% | ⚠️ Degradado | ✅ 100% | Consolidation API mais lenta (300-500ms vs <50ms) — queries MongoDB |
+| MongoDB DOWN | ❌ Falha | ❌ Falha | ❌ Falha | ❌ Falha | Sistema indisponível (SPOF em MVP) |
+| RabbitMQ DOWN | ✅ (202 Accepted) | ⚠️ Sem msgs | ⚠️ Sem msgs | ⚠️ Sem msgs | Lançamentos aceitos, mas não processados até RabbitMQ voltar |
 
 **Padrão:** Circuit breaker + bulkhead + timeout para resiliência adicional
 

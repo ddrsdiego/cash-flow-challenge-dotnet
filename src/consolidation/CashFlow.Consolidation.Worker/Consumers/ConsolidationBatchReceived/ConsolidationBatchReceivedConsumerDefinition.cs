@@ -1,8 +1,8 @@
-using System;
 using CashFlow.SharedKernel.Infrastructure;
 using MassTransit;
+using System;
 
-namespace CashFlow.Consolidation.Worker.Consumers;
+namespace CashFlow.Consolidation.Worker.Consumers.ConsolidationBatchReceived;
 
 /// <summary>
 /// Configures ConsolidationBatchReceivedConsumer with:

@@ -1,13 +1,13 @@
-using System;
-using System.Threading.Tasks;
-using CashFlow.Consolidation.Worker.Consumers.Extensions;
+using CashFlow.Consolidation.Worker.Consumers.ConsolidationBatchReceived.Extensions;
 using CashFlow.Consolidation.Worker.Extensions;
 using CashFlow.SharedKernel.Messages;
 using MassTransit;
 using MediatR;
 using Microsoft.Extensions.Logging;
+using System;
+using System.Threading.Tasks;
 
-namespace CashFlow.Consolidation.Worker.Consumers;
+namespace CashFlow.Consolidation.Worker.Consumers.ConsolidationBatchReceived;
 
 /// <summary>
 /// Consumes ConsolidationBatchReceivedEvent from RabbitMQ topic (cashflow.consolidation, routing: daily-consolidation-updated).

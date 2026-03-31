@@ -7,6 +7,7 @@ namespace CashFlow.Transactions.API.Application.UseCases.ListTransactions;
 
 public record ListTransactionsQuery(
     string TracerId,
+    string? UserId,
     DateTime StartDate,
     DateTime EndDate,
     TransactionType? Type,

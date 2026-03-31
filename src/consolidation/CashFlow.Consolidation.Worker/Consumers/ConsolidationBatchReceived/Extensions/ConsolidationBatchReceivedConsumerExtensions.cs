@@ -2,7 +2,7 @@ using CashFlow.Consolidation.Worker.Application.UseCases.ProcessConsolidationBat
 using CashFlow.SharedKernel.Messages;
 using MassTransit;
 
-namespace CashFlow.Consolidation.Worker.Consumers.Extensions;
+namespace CashFlow.Consolidation.Worker.Consumers.ConsolidationBatchReceived.Extensions;
 
 /// <summary>
 /// Extension method to map ConsolidationBatchReceivedEvent to ProcessConsolidationBatchCommand.

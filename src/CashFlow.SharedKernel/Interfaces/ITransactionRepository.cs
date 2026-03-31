@@ -16,31 +16,33 @@ namespace CashFlow.SharedKernel.Interfaces;
 public interface ITransactionRepository
 {
     /// <summary>
-    /// Retrieves a transaction by its unique identifier.
+    /// Retrieves a transaction by its unique identifier and user ID.
     /// Returns Maybe.None if not found.
     /// </summary>
-    Task<Maybe<Transaction>> GetByIdAsync(string id, CancellationToken cancellationToken = default);
+    Task<Maybe<Transaction>> GetByIdAsync(string id, string? userId = null, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Retrieves all transactions within the specified date range, with optional type filter.
+    /// Retrieves all transactions within the specified date range, with optional type and user ID filters.
     /// Returns an empty collection if none found.
     /// </summary>
     Task<IReadOnlyCollection<Transaction>> GetByPeriodAsync(
         DateTime startDate,
         DateTime endDate,
         TransactionType? type,
-        int page,
-        int pageSize,
+        string? userId = null,
+        int page = 1,
+        int pageSize = 20,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Returns the total count of transactions within the specified date range.
+    /// Returns the total count of transactions within the specified date range, with optional type and user ID filters.
     /// Used for pagination metadata.
     /// </summary>
     Task<long> CountByPeriodAsync(
         DateTime startDate,
         DateTime endDate,
         TransactionType? type,
+        string? userId = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

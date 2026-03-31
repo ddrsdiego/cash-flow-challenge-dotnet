@@ -54,7 +54,7 @@ public sealed class GetTransactionByIdQueryHandler : IRequestHandler<GetTransact
     {
         try
         {
-            var maybe = await _repository.GetByIdAsync(request.TransactionId, cancellationToken);
+            var maybe = await _repository.GetByIdAsync(request.TransactionId, request.UserId, cancellationToken);
 
             if (maybe.HasNoValue)
                 return Result.Failure<Transaction, Response>(

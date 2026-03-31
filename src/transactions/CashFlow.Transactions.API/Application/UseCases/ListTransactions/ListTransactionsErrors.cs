@@ -19,6 +19,18 @@ internal static class ListTransactionsErrors
                     .Build())
             .Build();
 
+    public static Response InvalidUserId(string tracerId) =>
+        Response.Builder()
+            .WithRequestId(tracerId)
+            .WithStatusCode(StatusCodes.Status400BadRequest)
+            .WithErrorResponse(
+                ErrorResponse.Builder()
+                    .WithInstance(Instance)
+                    .WithTraceId(tracerId)
+                    .WithError("INVALID_USER_ID", "INVALID_USER_ID", "UserId is required")
+                    .Build())
+            .Build();
+
     public static Response DatabaseError(string tracerId, string error) =>
         Response.Builder()
             .WithRequestId(tracerId)
