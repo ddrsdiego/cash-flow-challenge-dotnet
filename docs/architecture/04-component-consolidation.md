@@ -187,6 +187,34 @@ FLUXO:
 - Invalida chave do cache: `consol:{date}`
 - Próxima leitura buscará dados frescos do MongoDB
 
+#### Padrão: Fanout per-Instance (para múltiplas réplicas)
+
+**Problema:** Com múltiplas replicas da API e uma fila compartilhada (`consolidation.api.cache`), apenas **um** pod receberia cada mensagem (competing consumers), deixando os demais com cache stale.
+
+**Solução:** Cada pod cria sua **própria fila** com nome único e a vincula à exchange fanout:
+
+```
+EndpointName = "consolidation.api.cache-{Guid.NewGuid():N}"  // ex: consolidation.api.cache-a1b2c3d4e5f6
+```
+
+**Características:**
+- ✅ Cada pod recebe a mensagem **simultaneamente** (fanout behavior)
+- ✅ Fila é **auto-deletada** quando o pod para (`AutoDelete = true`)
+- ✅ Fila é **efêmera** (`Durable = false`)
+- ✅ Exchange permanece **permanente** (`Durable = true`, `AutoDelete = false`)
+- ✅ Retry policy mantido (3 tentativas: 5s, 15s, 30s)
+
+**Topologia RabbitMQ:**
+```
+Exchange: cashflow.consolidation (fanout, durable=true, permanent)
+    │
+    ├──► consolidation.updated               (Worker — fila existente)
+    ├──► consolidation.api.cache-<id-pod-A> (API pod A — AutoDelete)
+    └──► consolidation.api.cache-<id-pod-B> (API pod B — AutoDelete)
+```
+
+Cada pod invalida seu próprio `IMemoryCache` local após receber a mensagem.
+
 ---
 
 ## Consolidation.Worker — Componentes

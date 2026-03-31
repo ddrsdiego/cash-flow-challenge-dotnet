@@ -14,7 +14,8 @@ namespace CashFlow.Consolidation.Worker.Consumers.TransactionCreated;
 /// Maps the event to IngestTransactionsBatchCommand and dispatches via MediatR.
 /// Uses MongoDB Outbox (via ConsumerDefinition) for transactional consistency.
 /// </summary>
-public sealed class TransactionCreatedConsumer : IConsumer<TransactionCreatedEvent>
+public sealed class TransactionCreatedConsumer :
+    IConsumer<TransactionCreatedEvent>
 {
     private readonly IMediator _mediator;
     private readonly ILogger<TransactionCreatedConsumer> _logger;

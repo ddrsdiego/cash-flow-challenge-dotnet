@@ -1,10 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using CashFlow.SharedKernel.Domain.Entities;
-using CashFlow.SharedKernel.Domain.Enums;
 using CashFlow.SharedKernel.Interfaces;
 using CSharpFunctionalExtensions;
 using MongoDB.Driver;

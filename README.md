@@ -245,10 +245,20 @@ cash-flow-challenge-dotnet/
 > Em picos, o serviço de consolidado recebe **50 req/s com no máximo 5% de perda**.
 
 **Como atendemos:**
-- Cache-First com Redis (TTL 5min) → p95 < 50ms no happy path
+- Cache-First com IMemoryCache (TTL 5min) → p95 < 50ms no happy path
 - Cache miss → MongoDB (200-500ms)
-- Horizontal scaling via réplicas stateless
+- Horizontal scaling via réplicas stateless (cada pod com seu cache local)
 - Rate limiting no API Gateway (100 req/s por IP)
+
+### RNF-03: Consistência de Cache em Múltiplas Réplicas
+> Com N replicas da Consolidation API, todos os pods devem receber a invalidação de cache **simultaneamente**.
+
+**Como atendemos:**
+- Padrão **Fanout per-Instance** com RabbitMQ
+- Cada pod cria sua própria fila (`consolidation.api.cache-{unique-id}`) vinculada à exchange fanout
+- Fila é auto-deletada quando o pod para (`AutoDelete = true`)
+- Resultado: **todos os pods recebem a mensagem de invalidação simultaneamente**, não há competing consumers
+- Ver: [Fanout per-Instance Pattern](docs/architecture/04-component-consolidation.md#padrão-fanout-per-instance-para-múltiplas-réplicas)
 
 ---
 

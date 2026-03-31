@@ -2,7 +2,6 @@ namespace CashFlow.Consolidation.API.Application.UseCases.UpdateConsolidationCac
 
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -126,7 +125,8 @@ public sealed class UpdateConsolidationCacheCommandHandler :
         {
             var today = DateTime.UtcNow.Date;
 
-            // Update cache for found consolidations
+            // Update cache for found consolidations (pre-warm with fresh data)
+            // Note: invalidation is handled separately by InvalidateConsolidationCacheCommand
             foreach (var consolidation in consolidations)
             {
                 var key = new ConsolidationKey(consolidation.UserId, consolidation.Date);
@@ -143,15 +143,6 @@ public sealed class UpdateConsolidationCacheCommandHandler :
                     consolidation.LastUpdated);
 
                 await _cache.SetAsync(key, response, ttl, cancellationToken);
-            }
-
-            // Invalidate cache for keys not found in database
-            foreach (var keyStr in notFoundKeys)
-            {
-                if (!ConsolidationKey.TryParse(keyStr, out var key))
-                    continue;
-                
-                await _cache.InvalidateAsync(key, cancellationToken);
             }
 
             return Response.Ok();

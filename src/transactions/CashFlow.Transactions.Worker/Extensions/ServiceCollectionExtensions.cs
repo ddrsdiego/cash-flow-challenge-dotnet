@@ -8,7 +8,6 @@ using CashFlow.SharedKernel.Interfaces;
 using CashFlow.SharedKernel.Messages;
 using CashFlow.Transactions.Worker.Infrastructure.MongoDB;
 using MassTransit;
-using MediatR;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using MongoDB.Driver;

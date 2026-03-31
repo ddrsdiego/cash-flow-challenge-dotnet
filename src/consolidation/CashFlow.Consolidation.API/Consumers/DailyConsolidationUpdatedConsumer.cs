@@ -32,9 +32,15 @@ public sealed class DailyConsolidationUpdatedConsumer :
 
         try
         {
-            var command = context.ToCommand();
-            var response = await _mediator.Send(command);
-            response.ThrowIfServerError(_logger, LogTypes.DailyConsolidationUpdatedConsumer, tracerId);
+            // Step 1: Invalidate cache in all pods immediately (fast, in-memory only)
+            var invalidateCommand = context.ToInvalidateCommand();
+            var invalidateResponse = await _mediator.Send(invalidateCommand);
+            invalidateResponse.ThrowIfServerError(_logger, LogTypes.DailyConsolidationUpdatedConsumer, tracerId);
+
+            // Step 2: Pre-warm cache with fresh data from MongoDB (slower, but only on this pod)
+            var updateCommand = context.ToUpdateCommand();
+            var updateResponse = await _mediator.Send(updateCommand);
+            updateResponse.ThrowIfServerError(_logger, LogTypes.DailyConsolidationUpdatedConsumer, tracerId);
 
             DailyConsolidationUpdatedConsumerLog.CacheUpdatedSuccessfully(_logger, tracerId, context.Message.BatchId);
         }

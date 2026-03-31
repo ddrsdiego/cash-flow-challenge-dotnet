@@ -3,7 +3,6 @@ using CashFlow.SharedKernel.Domain.Enums;
 namespace CashFlow.Transactions.API.Application.UseCases.CreateTransaction;
 
 using System;
-using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using CashFlow.SharedKernel.Application.Utils;

@@ -9,7 +9,10 @@ public sealed class DailyConsolidationUpdatedConsumerDefinition :
 {
     public DailyConsolidationUpdatedConsumerDefinition()
     {
-        EndpointName = RabbitMqEndpointNames.DailyConsolidationUpdatedCache.QueueName;
+        // Fanout per-instance: each pod gets a unique queue that is auto-deleted when the pod stops.
+        // This ensures that all pods receive cache invalidation messages simultaneously,
+        // rather than competing for a single shared queue (competing consumers pattern).
+        EndpointName = $"{RabbitMqEndpointNames.DailyConsolidationUpdatedCache.QueueName}-{Guid.NewGuid():N}";
     }
 
     protected override void ConfigureConsumer(
@@ -19,9 +22,14 @@ public sealed class DailyConsolidationUpdatedConsumerDefinition :
     {
         if (endpointConfigurator is IRabbitMqReceiveEndpointConfigurator rmq)
         {
+            // Queue is ephemeral: auto-deleted when the consumer connection closes
+            rmq.AutoDelete = true;
+            rmq.Durable = false;
+
             rmq.Bind(RabbitMqEndpointNames.DailyConsolidationUpdatedCache.Exchange,
                 x =>
                 {
+                    // Exchange is permanent: survives pod restarts
                     x.ExchangeType = "fanout";
                     x.Durable = true;
                     x.AutoDelete = false;
@@ -33,7 +41,5 @@ public sealed class DailyConsolidationUpdatedConsumerDefinition :
                 TimeSpan.FromSeconds(5),
                 TimeSpan.FromSeconds(15),
                 TimeSpan.FromSeconds(30)));
-
-        // NO MongoDB Outbox for this consumer — read-only operations only
     }
 }

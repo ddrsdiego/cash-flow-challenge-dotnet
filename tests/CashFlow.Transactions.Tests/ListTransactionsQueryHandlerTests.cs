@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using CashFlow.SharedKernel.Application.Utils;
 using CashFlow.SharedKernel.Domain.Entities;
 using CashFlow.SharedKernel.Domain.Enums;
 using CashFlow.SharedKernel.Interfaces;
