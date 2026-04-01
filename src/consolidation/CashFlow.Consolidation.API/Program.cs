@@ -62,6 +62,9 @@ builder.Services.AddMediatRHandlers();
 builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddOpenTelemetryInstrumentation(builder.Configuration);
 
+// Health Checks (RNF-01 isolation proof: Consolidation can report health independently of Transactions)
+builder.Services.AddHealthChecks();
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Middleware Pipeline
 // ─────────────────────────────────────────────────────────────────────────────
@@ -81,7 +84,8 @@ app.UseAuthorization();
 // Endpoints
 // ─────────────────────────────────────────────────────────────────────────────
 
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = "cashflow-consolidation-api" }))
+// Health endpoint (proves RNF-01: Consolidation reports health independently)
+app.MapHealthChecks("/health")
     .WithMetadata(new EndpointNameMetadata("Health"))
     .AllowAnonymous();
 

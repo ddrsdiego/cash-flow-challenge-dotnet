@@ -3,6 +3,7 @@ using CashFlow.SharedKernel.Domain.Entities;
 namespace CashFlow.Consolidation.API.Application.UseCases.GetDailyConsolidation;
 
 using System;
+using System.Diagnostics.Metrics;
 using System.Threading;
 using System.Threading.Tasks;
 using CashFlow.SharedKernel.Application.Utils;
@@ -16,6 +17,17 @@ using Microsoft.Extensions.Logging;
 public sealed class GetDailyConsolidationQueryHandler :
     IRequestHandler<GetDailyConsolidationQuery, Response>
 {
+    // OpenTelemetry Metrics — exported via Prometheus
+    private static readonly Meter _meter = new("CashFlow.Consolidation.API");
+    private static readonly Counter<long> _cacheHitsTotal = 
+        _meter.CreateCounter<long>("consolidation_cache_hits_total", 
+            unit: "1", 
+            description: "Total cache hits for daily consolidation queries");
+    private static readonly Counter<long> _cacheMissesTotal = 
+        _meter.CreateCounter<long>("consolidation_cache_misses_total", 
+            unit: "1", 
+            description: "Total cache misses for daily consolidation queries");
+
     private readonly IConsolidationCache _cache;
     private readonly IConsolidationQueryRepository _consolidationRepository;
     private readonly ILogger<GetDailyConsolidationQueryHandler> _logger;
@@ -54,12 +66,14 @@ public sealed class GetDailyConsolidationQueryHandler :
             var cachedResult = await _cache.GetAsync(key, cancellationToken);
             if (cachedResult.HasValue)
             {
+                _cacheHitsTotal.Add(1);
                 GetDailyConsolidationLog.CacheHit(_logger, request.TracerId, request.UserId, request.Date);
                 GetDailyConsolidationLog.ConsolidationRetrieved(_logger, request.TracerId);
                 return Response.Ok(cachedResult.Value);
             }
 
             // 2.2 - Cache miss — fetch from MongoDB
+            _cacheMissesTotal.Add(1);
             GetDailyConsolidationLog.CacheMiss(_logger, request.TracerId, request.UserId, request.Date);
 
             var consolidationResult = await GetConsolidationFromDatabaseAsync(request, key, cancellationToken);

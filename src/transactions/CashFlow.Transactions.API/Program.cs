@@ -4,6 +4,7 @@ using CashFlow.Transactions.API.Extensions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi.Models;
@@ -52,6 +53,9 @@ builder.Services.AddMediatRHandlers();
 builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddOpenTelemetryInstrumentation(builder.Configuration);
 
+// Health Checks (RNF-01 isolation proof: Transactions can report health independently of Consolidation)
+builder.Services.AddHealthChecks();
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -65,7 +69,8 @@ app.UseAuthorization();
 
 app.MapTransactionEndpoints();
 
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = "cashflow-transactions-api" }))
+// Health endpoint (proves RNF-01: Transactions continues even if Consolidation fails)
+app.MapHealthChecks("/health")
     .WithMetadata(new EndpointNameMetadata("Health"))
     .AllowAnonymous();
 

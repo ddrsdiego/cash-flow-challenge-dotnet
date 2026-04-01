@@ -50,24 +50,46 @@
 | RabbitMQ DOWN | ⚠️ Degradado | ⚠️ Degradado | Lançamentos são criados mas não propagam para consolidado |
 | Redis DOWN | ✅ Funcional | ⚠️ Sem cache | Consolidation API funciona mas mais lentamente (sem cache) |
 
-#### 4.2 Implementação Técnica
+#### 4.2 Implementação Técnica — Resiliência para Arquitetura Event-Driven
 
-**Padrão: Circuit Breaker**
-- Consolidation API: timeout em 5s para dependências externas
-- Se 50% de requisições falham em 30s, circuit abre (fast-fail)
-- Retry após 60s
-- Fallback: retorna resultado em cache antigo ou erro gracioso
+A arquitetura é **totalmente desacoplada temporalmente** (sem chamadas HTTP síncronas entre serviços). Portanto, os padrões de resiliência refletem esse design:
 
-**Padrão: Bulkhead (Isolamento de Threads)**
-- Transactions: thread pool isolado
-- Consolidation: thread pool isolado
-- Uma não consome threads da outra
+**Padrão: Outbox (Garantia Transacional de Publicação)**
+- Transactions API persiste transação e evento na mesma transação MongoDB
+- Evento é publicado em RabbitMQ via MassTransit Outbox
+- Se MongoDB falha: nada é persistido (atomicidade)
+- Se RabbitMQ falha: evento fica em outbox para retry posterior
+- **Resultado:** Consolidation nunca recebe transação incompleta
 
-**Padrão: Retry com Exponential Backoff**
-- RabbitMQ: 3 retries com delays 1s, 2s, 4s
-- MongoDB: 2 retries com delay 500ms
-- APIs externas: 1 retry com delay 1s (timeout rápido)
-- Dead Letter Queue: mensagens com 3+ falhas vão para DLQ para análise manual
+**Padrão: Retry no Consumer (MassTransit)**
+- Consolidation Worker consome mensagens com retry automático
+- Falhas temporárias (timeout, connection pool exaurido) são retentadas
+- Backoff exponencial configurável
+- **Resultado:** Falhas transitórias não descartam eventos
+
+**Padrão: Dead Letter Queue (DLQ)**
+- Mensagem com 3+ falhas é movida para DLQ (`skipped-outbox-events`)
+- Admin é notificado para análise manual
+- Evento não é perdido, apenas pausado para investigação
+- **Resultado:** Visibilidade total de eventos com falha permanente
+
+**Padrão: Isolamento por Process/Container**
+- Transactions API e Consolidation API são processos separados
+- Cada um tem seu próprio thread pool, memory, conexões
+- Falha em um não consome recursos do outro
+- **Resultado:** Isolamento garantido pelo OS/container runtime
+
+**MongoDB Connection Resilience:**
+- Driver MongoDB mantém pool de conexões com `MaxPoolSize=100`
+- Reconexão automática via `ServerSelectionTimeout=30s`
+- Falha temporária não causa timeout imediato
+- **Resultado:** Tolerância a falhas transitórias de BD
+
+**Consolidation API Cache Fallback:**
+- Se MongoDB fica indisponível durante cache miss, retorna 503
+- Cliente implementa retry
+- Cache antigo (se houver) NÃO é retornado (evita dados obsoletos)
+- **Resultado:** Fail-fast em vez de dados incorretos
 
 ---
 
