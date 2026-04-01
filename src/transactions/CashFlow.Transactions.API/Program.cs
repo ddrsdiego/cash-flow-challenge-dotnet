@@ -70,3 +70,8 @@ app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = "cash
     .AllowAnonymous();
 
 app.Run();
+
+public partial class Program { }
+
+/// <summary>Marker type for WebApplicationFactory</summary>
+public class TransactionsApiMarker { }

@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio">
@@ -25,6 +26,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\CashFlow.SharedKernel\CashFlow.SharedKernel.csproj" />
+    <ProjectReference Include="..\..\src\transactions\CashFlow.Transactions.API\CashFlow.Transactions.API.csproj" />
+    <ProjectReference Include="..\..\src\consolidation\CashFlow.Consolidation.API\CashFlow.Consolidation.API.csproj" />
   </ItemGroup>
 
 </Project>

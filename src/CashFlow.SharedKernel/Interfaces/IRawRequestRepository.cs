@@ -10,31 +10,10 @@ namespace CashFlow.SharedKernel.Interfaces;
 /// <summary>
 /// Repository for managing raw transaction requests in the fast ingestion pipeline.
 /// Handles persistence, status tracking, and batch processing coordination.
+/// Inherits ingestion operations from IRawRequestIngestionRepository for segregated interfaces.
 /// </summary>
-public interface IRawRequestRepository
+public interface IRawRequestRepository : IRawRequestIngestionRepository
 {
-    /// <summary>
-    /// Get a raw request by its unique idempotency key.
-    /// Used for request deduplication.
-    /// </summary>
-    /// <param name="idempotencyKey">Client-provided idempotency key</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Maybe with RawRequest if found; None if not found</returns>
-    Task<Maybe<RawRequest>> GetByIdempotencyKeyAsync(
-        string idempotencyKey,
-        CancellationToken cancellationToken);
-
-    /// <summary>
-    /// Persist a new raw request.
-    /// </summary>
-    /// <param name="request">RawRequest to persist</param>
-    /// <param name="session">MongoDB session for transactional writes (optional)</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    Task InsertAsync(
-        RawRequest request,
-        IClientSessionHandle session = null,
-        CancellationToken cancellationToken = default);
-
     /// <summary>
     /// Find pending raw requests for batch processing.
     /// Ordered by creation date (FIFO).

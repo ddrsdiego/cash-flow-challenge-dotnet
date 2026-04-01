@@ -342,7 +342,7 @@ dotnet test CashFlow.sln
 | **Fase 4.4** | Consolidation API (JWT Auth + health endpoint) | ✅ Completo |
 | **Fase 4.5** | API Gateway (YARP + JWT Auth + Rate Limiting + OTel) | ✅ Completo |
 | **Fase 4.6** | Consolidation Worker (MassTransit Consumer + Batch Processing) | ✅ Completo |
-| **Fase 5** | Testes Unitários (50 testes: Transactions 18 + Consolidation 20 + Worker 12) | ✅ Completo (40+ testes) |
+| **Fase 5** | Testes Unitários + Integração (54 testes: Transactions 18 + Consolidation 19 + Integration 5 + Worker 12) | ✅ Completo (54/54 testes) |
 
 ---
 
@@ -369,7 +369,7 @@ dotnet test CashFlow.sln
 | **RBAC (2 papéis)** | Segurança | `admin` pode criar (POST /transactions); `user` pode ler (GET); políticas no Gateway | `src/CashFlow.Gateway/Program.cs` + ADR-009 |
 | **Rate Limiting** | Performance | YARP: 100 req/s por IP (global); Consolidation API: 50 req/s (dedicado) | `src/CashFlow.Gateway` + `src/CashFlow.Consolidation.API` |
 | **Observabilidade** | Operações | OpenTelemetry correlationId em todos os traces; Seq para logs estruturados; Jaeger para distributed tracing | `src/***/Extensions/ServiceCollectionExtensions.cs` |
-| **Testes Unitários** | QA | 50 testes `[Fact]`: Transactions 18 + Consolidation 20 + Worker 12; todos com `[Fact]` e naming idiomático | `tests/CashFlow.*.Tests` |
+| **Testes Unitários + Integração** | QA | 54 testes `[Fact]`: Transactions 18 + Consolidation 19 + Integration 5 + Worker 12; todos com `[Fact]` e naming idiomático | `tests/CashFlow.*.Tests` |
 
 ---
 

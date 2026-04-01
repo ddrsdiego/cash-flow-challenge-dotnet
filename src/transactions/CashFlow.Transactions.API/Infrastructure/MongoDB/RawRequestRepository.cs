@@ -11,10 +11,11 @@ namespace CashFlow.Transactions.API.Infrastructure.MongoDB;
 
 /// <summary>
 /// Repository for managing raw transaction requests in fast ingestion.
-/// Minimal implementation in API: only GetByIdempotencyKeyAsync and InsertAsync.
-/// Full implementation is in Transactions.Worker.
+/// Minimal implementation in API: only ingestion operations.
+/// Implements IRawRequestIngestionRepository (ingestion-only, segregated interface).
+/// Full batch processing implementation is in Transactions.Worker.
 /// </summary>
-public class RawRequestRepository : IRawRequestRepository
+public class RawRequestRepository : IRawRequestIngestionRepository
 {
     private readonly MongoDbContext _context;
 
@@ -46,46 +47,5 @@ public class RawRequestRepository : IRawRequestRepository
             await _context.RawRequests.InsertOneAsync(session, request, cancellationToken: cancellationToken);
         else
             await _context.RawRequests.InsertOneAsync(request, cancellationToken: cancellationToken);
-    }
-
-    // ═════════════════════════════════════════════════════════════════════════════
-    // Not implemented in API — only in Worker
-    // ═════════════════════════════════════════════════════════════════════════════
-
-    public Task<IReadOnlyCollection<RawRequest>> FindPendingAsync(
-        int limit,
-        CancellationToken cancellationToken)
-    {
-        throw new NotImplementedException("Use Transactions.Worker.Infrastructure.MongoDB.RawRequestRepository");
-    }
-
-    public Task MarkAsDispatchedAsync(
-        IEnumerable<string> requestIds,
-        string batchId,
-        CancellationToken cancellationToken)
-    {
-        throw new NotImplementedException("Use Transactions.Worker.Infrastructure.MongoDB.RawRequestRepository");
-    }
-
-    public Task<IReadOnlyCollection<RawRequest>> FindOrphanedDispatchedAsync(
-        int minutesThreshold,
-        CancellationToken cancellationToken)
-    {
-        throw new NotImplementedException("Use Transactions.Worker.Infrastructure.MongoDB.RawRequestRepository");
-    }
-
-    public Task MarkAsProcessedAsync(
-        IEnumerable<string> requestIds,
-        IClientSessionHandle session = null,
-        CancellationToken cancellationToken = default)
-    {
-        throw new NotImplementedException("Use Transactions.Worker.Infrastructure.MongoDB.RawRequestRepository");
-    }
-
-    public Task<IReadOnlyCollection<RawRequest>> GetByBatchIdAsync(
-        string batchId,
-        CancellationToken cancellationToken)
-    {
-        throw new NotImplementedException("Use Transactions.Worker.Infrastructure.MongoDB.RawRequestRepository");
     }
 }

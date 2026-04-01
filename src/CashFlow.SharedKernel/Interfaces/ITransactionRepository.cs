@@ -12,8 +12,9 @@ namespace CashFlow.SharedKernel.Interfaces;
 /// <summary>
 /// Repository interface for the Transaction aggregate.
 /// Implementations are in the CashFlow.Transactions.API infrastructure layer.
+/// Inherits write operations from ITransactionWriteRepository for segregated interfaces.
 /// </summary>
-public interface ITransactionRepository
+public interface ITransactionRepository : ITransactionWriteRepository
 {
     /// <summary>
     /// Retrieves a transaction by its unique identifier and user ID.
@@ -43,15 +44,5 @@ public interface ITransactionRepository
         DateTime endDate,
         TransactionType? type,
         string? userId = null,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Inserts one or more transactions in batch using BulkWrite.
-    /// Accepts an optional IClientSessionHandle to participate in a MongoDB transaction.
-    /// Use new[] { transaction } for single inserts to keep the interface batch-safe.
-    /// </summary>
-    Task InsertAsync(
-        IEnumerable<Transaction> transactions,
-        IClientSessionHandle session = null,
         CancellationToken cancellationToken = default);
 }

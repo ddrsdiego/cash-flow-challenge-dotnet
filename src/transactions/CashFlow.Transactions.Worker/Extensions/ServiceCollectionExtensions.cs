@@ -22,7 +22,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITransactionsWorkerMongoDbContext, TransactionsWorkerMongoDbContext>();
         services.AddScoped<IRawRequestRepository, RawRequestRepository>();
         services.AddScoped<IDistributedLockRepository, DistributedLockRepository>();
-        services.AddScoped<ITransactionRepository, TransactionRepository>();
+        services.AddScoped<ITransactionWriteRepository, TransactionRepository>();
 
         // Register MongoDB index configurators
         services.AddScoped<IRawRequestIndexConfig, RawRequestIndexConfig>();

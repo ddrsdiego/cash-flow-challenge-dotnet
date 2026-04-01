@@ -14,41 +14,15 @@ namespace CashFlow.Transactions.Worker.Infrastructure.MongoDB;
 /// <summary>
 /// Repository for Transaction persistence in Worker context.
 /// Used by ProcessTransactionBatch to bulk insert validated transactions.
+/// Implements ITransactionWriteRepository (write-only, segregated interface).
 /// </summary>
-public class TransactionRepository : ITransactionRepository
+public class TransactionRepository : ITransactionWriteRepository
 {
     private readonly ITransactionsWorkerMongoDbContext _context;
 
     public TransactionRepository(ITransactionsWorkerMongoDbContext context)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
-    }
-
-    public Task<Maybe<Transaction>> GetByIdAsync(string id, string? userId = null, CancellationToken cancellationToken = default)
-    {
-        throw new NotImplementedException("Not used in Worker");
-    }
-
-    public Task<IReadOnlyCollection<Transaction>> GetByPeriodAsync(
-        DateTime startDate,
-        DateTime endDate,
-        TransactionType? type,
-        string? userId = null,
-        int page = 1,
-        int pageSize = 20,
-        CancellationToken cancellationToken = default)
-    {
-        throw new NotImplementedException("Not used in Worker");
-    }
-
-    public Task<long> CountByPeriodAsync(
-        DateTime startDate,
-        DateTime endDate,
-        TransactionType? type,
-        string? userId = null,
-        CancellationToken cancellationToken = default)
-    {
-        throw new NotImplementedException("Not used in Worker");
     }
 
     public async Task InsertAsync(

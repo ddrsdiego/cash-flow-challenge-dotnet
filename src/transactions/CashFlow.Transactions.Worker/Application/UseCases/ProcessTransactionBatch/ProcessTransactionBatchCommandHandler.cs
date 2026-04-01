@@ -22,13 +22,13 @@ public sealed class ProcessTransactionBatchCommandHandler :
     IRequestHandler<ProcessTransactionBatchCommand, Response>
 {
     private readonly IRawRequestRepository _rawRequestRepository;
-    private readonly ITransactionRepository _transactionRepository;
+    private readonly ITransactionWriteRepository _transactionRepository;
     private readonly ITransactionalPublisher _transactionalPublisher;
     private readonly ILogger<ProcessTransactionBatchCommandHandler> _logger;
 
     public ProcessTransactionBatchCommandHandler(
         IRawRequestRepository rawRequestRepository,
-        ITransactionRepository transactionRepository,
+        ITransactionWriteRepository transactionRepository,
         ITransactionalPublisher transactionalPublisher,
         ILogger<ProcessTransactionBatchCommandHandler> logger)
     {

@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using CashFlow.Consolidation.API.Application.UseCases.GetDailyConsolidation;
 using CashFlow.Consolidation.API.Extensions;
+using CashFlow.SharedKernel.DTOs.Responses;
 using CashFlow.SharedKernel.Infrastructure.Extensions;
 using MediatR;
 using Microsoft.AspNetCore.Builder;
@@ -89,7 +90,7 @@ app.MapGet("/consolidation/{date:datetime}", HandleGetDailyConsolidation)
     .WithOpenApi()
     .RequireAuthorization()
     .WithDescription("Get daily consolidation for a specific date")
-    .Produces<object>(StatusCodes.Status200OK)
+    .Produces<DailyConsolidationResponse>(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status400BadRequest)
     .Produces(StatusCodes.Status404NotFound)
     .Produces(StatusCodes.Status500InternalServerError);
@@ -122,8 +123,13 @@ async Task<IResult> HandleGetDailyConsolidation(
     return response.StatusCode switch
     {
         200 => Results.Ok(response.Data),
-        400 => Results.BadRequest(response.ErrorContent?.ErrorResponse),
-        404 => Results.NotFound(response.ErrorContent?.ErrorResponse),
+        400 => Results.BadRequest(response.ErrorContent.ErrorResponse),
+        404 => Results.NotFound(response.ErrorContent.ErrorResponse),
         _ => Results.StatusCode(response.StatusCode)
     };
 }
+
+public partial class Program { }
+
+/// <summary>Marker type for WebApplicationFactory</summary>
+public class ConsolidationApiMarker { }

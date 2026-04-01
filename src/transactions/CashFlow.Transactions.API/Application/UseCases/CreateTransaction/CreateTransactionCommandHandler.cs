@@ -16,11 +16,11 @@ using Microsoft.Extensions.Logging;
 public sealed class CreateTransactionCommandHandler :
     IRequestHandler<CreateTransactionCommand, Response>
 {
-    private readonly IRawRequestRepository _rawRequestRepository;
+    private readonly IRawRequestIngestionRepository _rawRequestRepository;
     private readonly ILogger<CreateTransactionCommandHandler> _logger;
 
     public CreateTransactionCommandHandler(
-        IRawRequestRepository rawRequestRepository,
+        IRawRequestIngestionRepository rawRequestRepository,
         ILogger<CreateTransactionCommandHandler> logger)
     {
         _rawRequestRepository = rawRequestRepository ?? throw new ArgumentNullException(nameof(rawRequestRepository));

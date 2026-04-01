@@ -21,7 +21,7 @@ public static class ServiceCollectionExtensions
         services.AddMongoDbClient(configuration);
         services.AddScoped<MongoDbContext>();
         services.AddScoped<ITransactionRepository, TransactionRepository>();
-        services.AddScoped<IRawRequestRepository, RawRequestRepository>();
+        services.AddScoped<IRawRequestIngestionRepository, RawRequestRepository>();
     }
 
     public static IServiceCollection AddMediatRHandlers(this IServiceCollection services)
