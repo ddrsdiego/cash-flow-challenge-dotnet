@@ -339,10 +339,10 @@ dotnet test CashFlow.sln
 | **Fase 4.1** | SharedKernel (entidades, eventos, interfaces, DTOs) | ✅ Completo |
 | **Fase 4.2** | Transactions API (JWT Auth + CQRS + MongoDB Outbox) | ✅ Completo |
 | **Fase 4.3** | Transactions.Worker (Fast Ingestion + Batch Processing) | ✅ Completo |
-| **Fase 4.4** | Consolidation API (JWT Auth + health endpoint) | ✅ Completo |
+| **Fase 4.4** | Consolidation API (JWT Auth + Cache-First + Health endpoint) | ✅ Completo |
 | **Fase 4.5** | API Gateway (YARP + JWT Auth + Rate Limiting + OTel) | ✅ Completo |
 | **Fase 4.6** | Consolidation Worker (MassTransit Consumer + Batch Processing) | ✅ Completo |
-| **Fase 5** | Testes Unitários + Integração (54 testes: Transactions 18 + Consolidation 19 + Integration 5 + Worker 12) | ✅ Completo (54/54 testes) |
+| **Fase 5** | Testes Automatizados (54 testes: Transactions 18 + Consolidation 19 + Integration 5 + Worker 12) | ✅ Completo (54/54 testes) |
 
 ---
 
@@ -353,12 +353,12 @@ dotnet test CashFlow.sln
 | **RNF-01: Isolamento de Falhas** | Arquitetura | Comunicação exclusivamente assíncrona via RabbitMQ; Transactions API retorna 201 sem depender de Consolidation | `docs/architecture/06-architectural-patterns.md` (Seção 3) |
 | **RNF-02: Throughput 50 req/s** | Arquitetura | Cache-First com IMemoryCache (< 10ms HIT), MongoDB para MISS, Rate limiting 100 req/s no Gateway | `docs/architecture/06-architectural-patterns.md` (Seção 2) |
 | **RNF-03: Cache em Múltiplas Replicas** | Arquitetura | Padrão Fanout per-Instance com RabbitMQ; cada pod recebe invalidação simultaneamente | `docs/architecture/04-component-consolidation.md` |
-| **RN-01: Validação de Valor** | Negócio | FluentValidation em `CreateTransactionRequest`: `amount > 0` | `src/CashFlow.Transactions.API` |
+| **RN-01: Validação de Valor** | Negócio | Validação manual no Handler: `Amount > 0` | `src/CashFlow.Transactions.API/Application/UseCases/CreateTransaction` |
 | **RN-02: Cálculo de Saldo** | Negócio | Balance = Sum(Credits) - Sum(Debits); decimal precision no MongoDB | `src/CashFlow.SharedKernel/Domain/Entities` |
 | **RN-03: Imutabilidade Transações Passadas** | Negócio | Regra de negócio documentada; endpoints não implementam DELETE/PUT em dados históricos | `docs/requirements/01-functional-requirements.md` (RN-03) |
 | **RN-04: Consolidação Diária Única** | Negócio | MongoDB com UPSERT em `daily_balances`; índice único em `(date, userId)` | `src/CashFlow.Consolidation.Worker` |
-| **RN-05: Descrição Obrigatória** | Validação | FluentValidation: `!string.IsNullOrWhiteSpace(description) && description.Length <= 500` | `src/CashFlow.Transactions.API` |
-| **RN-06: Categoria Vinculada** | Validação | Enum `Category` com valores predefinidos; FluentValidation valida contra enum | `src/CashFlow.SharedKernel/Domain/Enums` |
+| **RN-05: Descrição Obrigatória** | Validação | Validação manual no Handler: `!string.IsNullOrWhiteSpace(description) && description.Length <= 500` | `src/CashFlow.Transactions.API/Application/UseCases/CreateTransaction` |
+| **RN-06: Categoria Vinculada** | Validação | Enum `Category` com valores predefinidos | `src/CashFlow.SharedKernel/Domain/Enums` |
 | **RN-07: Isolamento de Falhas (RabbitMQ)** | Arquitetura | Evento publicado após persistência; Worker processa asincronamente | `docs/architecture/06-architectural-patterns.md` (Seção 3) |
 | **RN-08: UserId por Extração JWT** | Segurança | API Gateway extrai `sub` do JWT e injeta header `X-User-Id`; Transactions API usa este header | `src/CashFlow.Gateway/Program.cs` |
 | **UC-01: Criar Débito** | Funcional | POST `/api/v1/transactions` com `type: "DEBIT"`; validação, persistência, evento publicado | `src/CashFlow.Transactions.API/Endpoints` |
